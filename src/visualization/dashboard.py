@@ -410,19 +410,19 @@ class TrainingDashboard:
         y += 25
 
         if stats and stats.cpu:
-            bar_width = 40
-            bar_height = 12
+            bar_width = 80
+            bar_height = 14
             label_width = 22  # Fixed width for labels (fits "15")
-            pct_width = 35    # Fixed width for percentage text
-            item_width = label_width + bar_width + pct_width + 5
-            cores_per_row = min(8, (self.hardware_rect.width // 2) // item_width)
+            pct_width = 40    # Fixed width for percentage text
+            item_width = label_width + bar_width + pct_width + 10
+            cores_per_row = 4  # 4 columns for a clean 4x4 grid with 16 threads
 
             for i, percent in enumerate(stats.cpu.per_core_percent):
                 col = i % cores_per_row
                 row = i // cores_per_row
 
                 bx = x + col * item_width
-                by = y + row * (bar_height + 6)
+                by = y + row * (bar_height + 8)
 
                 # Core label (fixed width, right-aligned)
                 label = self.font_small.render(f"{i}", True, (150, 150, 150))
@@ -430,22 +430,22 @@ class TrainingDashboard:
                 self.screen.blit(label, (label_x, by))
 
                 # Background bar (fixed position after label)
-                bar_x = bx + label_width + 3
+                bar_x = bx + label_width + 5
                 bg_rect = pygame.Rect(bar_x, by, bar_width, bar_height)
-                pygame.draw.rect(self.screen, (50, 50, 60), bg_rect, border_radius=2)
+                pygame.draw.rect(self.screen, (50, 50, 60), bg_rect, border_radius=3)
 
                 # Fill bar
                 fill_width = int(percent / 100 * bar_width)
                 if fill_width > 0:
                     color = ACCENT_COLOR if percent < 80 else WARNING_COLOR if percent < 95 else DANGER_COLOR
                     fill_rect = pygame.Rect(bar_x, by, fill_width, bar_height)
-                    pygame.draw.rect(self.screen, color, fill_rect, border_radius=2)
+                    pygame.draw.rect(self.screen, color, fill_rect, border_radius=3)
 
                 # Percentage text
                 pct_text = self.font_small.render(f"{percent:.0f}%", True, TEXT_COLOR)
-                self.screen.blit(pct_text, (bar_x + bar_width + 3, by))
+                self.screen.blit(pct_text, (bar_x + bar_width + 5, by))
 
-            y += ((len(stats.cpu.per_core_percent) - 1) // cores_per_row + 1) * (bar_height + 6) + 10
+            y += ((len(stats.cpu.per_core_percent) - 1) // cores_per_row + 1) * (bar_height + 8) + 10
 
         # GPU Section
         gpu_x = self.hardware_rect.x + self.hardware_rect.width // 2 + 20
