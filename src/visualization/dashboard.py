@@ -152,6 +152,10 @@ class TrainingDashboard:
                 if event.key == pygame.K_ESCAPE:
                     return False
 
+        # Track high score continuously (not just at episode end)
+        if score > self.metrics.high_score:
+            self.metrics.high_score = score
+
         # Update metrics if episode completed
         if episode > len(self.metrics.episodes):
             self._update_metrics(episode, score, epsilon, loss)

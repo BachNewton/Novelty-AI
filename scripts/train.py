@@ -188,8 +188,6 @@ def train_with_visualization(config, device_manager, start_episode: int = 0, loa
     import pygame
 
     from src.visualization.dashboard import TrainingDashboard
-    from src.visualization.milestone_effects import MilestoneEffects, HighScoreTracker
-    from src.visualization.replay_player import ReplayWindow
 
     print("\n[Training] Starting training with visualization...")
     print("[Training] Close the window or press ESC to stop\n")
@@ -226,14 +224,6 @@ def train_with_visualization(config, device_manager, start_episode: int = 0, loa
         grid_height=config.game.grid_height,
         chart_update_interval=config.visualization.chart_update_interval,
     )
-
-    # Initialize effects
-    effects = MilestoneEffects(dashboard.screen)
-    score_tracker = HighScoreTracker(effects)
-
-    # Replay window disabled for now - pygame doesn't handle multiple windows well
-    # TODO: Re-enable once we fix the threading issue
-    replay_window = None
 
     # Training loop
     total_episodes = config.training.episodes
@@ -277,31 +267,11 @@ def train_with_visualization(config, device_manager, start_episode: int = 0, loa
                     fps=config.visualization.render_fps
                 )
 
-                # Update and draw effects
-                effects.update()
-                effects.draw()
-                pygame.display.flip()
-
             if not running:
                 break
 
-            # Episode complete - check for high score
+            # Episode complete
             score = info["score"]
-            is_new_high = score_tracker.check_score(
-                score,
-                x=dashboard.game_rect.centerx,
-                y=dashboard.game_rect.centery
-            )
-
-            if is_new_high and config.replay.enabled and replay_window is not None:
-                # Queue replay for playback
-                replay_frames = env.get_replay()
-                replay_window.queue_replay(
-                    frames=replay_frames,
-                    score=score,
-                    episode=episode,
-                    save=True
-                )
 
             # Decay epsilon
             agent.decay_epsilon()
@@ -312,7 +282,7 @@ def train_with_visualization(config, device_manager, start_episode: int = 0, loa
                 print(
                     f"Episode {episode}/{total_episodes} | "
                     f"Score: {score} | Avg: {avg_score:.1f} | "
-                    f"High: {score_tracker.high_score} | Epsilon: {agent.epsilon:.4f}"
+                    f"High: {dashboard.metrics.high_score} | Epsilon: {agent.epsilon:.4f}"
                 )
 
             # Save checkpoint
@@ -332,10 +302,8 @@ def train_with_visualization(config, device_manager, start_episode: int = 0, loa
 
         # Clean up
         dashboard.close()
-        if replay_window is not None:
-            replay_window.stop()
 
-    print(f"\n[Training] Complete! High score: {score_tracker.high_score}")
+    print(f"\n[Training] Complete! High score: {dashboard.metrics.high_score}")
 
 
 def main():

@@ -275,6 +275,7 @@ class HighScoreTracker:
         """
         # Only celebrate if score > 0 (ate at least one food) and beats previous high
         if score > 0 and score > self.high_score:
+            print(f"[HIGH SCORE] New high: {score} (previous: {self.high_score})")
             self.high_score = score
             self.effects.trigger_high_score(score, x, y)
             self.last_celebrated_score = score
