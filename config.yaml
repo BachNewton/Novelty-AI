@@ -48,6 +48,7 @@ replay:
   enabled: true
   save_dir: "replays"
   playback_fps: 10  # Slower than training for watchability
+  max_replays: 10   # Keep only the best N replays
 
 # Hardware Monitor Settings
 hardware_monitor:

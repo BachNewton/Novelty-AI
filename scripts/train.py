@@ -97,7 +97,8 @@ def train_headless(config, device_manager, start_episode: int = 0, load_path: st
     replay_window = ReplayWindow(
         grid_width=config.game.grid_width,
         grid_height=config.game.grid_height,
-        fps=config.replay.playback_fps
+        fps=config.replay.playback_fps,
+        max_replays=config.replay.max_replays
     )
 
     # Training stats

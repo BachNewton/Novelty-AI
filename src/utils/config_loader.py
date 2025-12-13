@@ -55,6 +55,7 @@ class ReplayConfig:
     enabled: bool = True
     save_dir: str = "replays"
     playback_fps: int = 10
+    max_replays: int = 10
 
 
 @dataclass
