@@ -1,0 +1,18 @@
+# Deep Learning
+torch>=2.4.0
+
+# Game and Visualization
+pygame>=2.6.0
+numpy>=1.26.0
+
+# Configuration
+PyYAML>=6.0
+
+# Hardware Monitoring
+psutil>=5.9.0
+GPUtil>=1.4.0
+WMI>=1.5.1
+pywin32>=306
+
+# Optional: AMD GPU support (uncomment if needed)
+# pip install torch-directml

@@ -1,0 +1,60 @@
+# Snake AI Training Configuration
+
+# Game Settings
+game:
+  grid_width: 20
+  grid_height: 20
+
+# Training Hyperparameters
+training:
+  episodes: 10000
+  batch_size: 64
+  learning_rate: 0.001
+  gamma: 0.99  # Discount factor
+
+  # Epsilon (exploration)
+  epsilon_start: 1.0
+  epsilon_min: 0.01
+  epsilon_decay: 0.995
+
+  # Experience replay
+  buffer_size: 100000
+  target_update_freq: 100
+
+  # Checkpointing
+  save_interval: 100  # Save model every N episodes
+  checkpoint_dir: "models"
+
+# Device Settings
+device:
+  # Options: "auto", "cuda", "directml", "cpu"
+  preferred: "auto"
+  force_cpu: false
+
+# Visualization Settings
+visualization:
+  enabled: true
+  show_game: true
+  show_charts: true
+  render_fps: 30
+  chart_update_interval: 25  # Update charts every 25 episodes (reduces lag)
+
+  # Dashboard window
+  window_width: 1400
+  window_height: 900
+
+# Replay Settings
+replay:
+  enabled: true
+  save_dir: "replays"
+  playback_fps: 10  # Slower than training for watchability
+
+# Hardware Monitor Settings
+hardware_monitor:
+  enabled: true
+  update_interval: 1.0  # seconds
+
+# Logging
+logging:
+  level: "INFO"
+  log_file: "logs/training.log"
