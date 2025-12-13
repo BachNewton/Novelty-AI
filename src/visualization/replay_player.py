@@ -54,15 +54,17 @@ class ReplayManager:
     Replays are saved as JSON files with timestamps.
     """
 
-    def __init__(self, save_dir: str = "replays"):
+    def __init__(self, save_dir: str = "replays", max_replays: int = 10):
         """
         Initialize the replay manager.
 
         Args:
             save_dir: Directory to save replays
+            max_replays: Maximum number of replays to keep (keeps highest scores)
         """
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
+        self.max_replays = max_replays
 
     def save_replay(
         self,
@@ -96,7 +98,42 @@ class ReplayManager:
         with open(filepath, "w") as f:
             json.dump(replay.to_dict(), f)
 
+        # Clean up old replays, keeping only the best ones
+        self._cleanup_old_replays()
+
         return str(filepath)
+
+    def _cleanup_old_replays(self):
+        """Remove lowest-scoring replays if we exceed max_replays."""
+        replay_files = list(self.save_dir.glob("replay_*.json"))
+
+        if len(replay_files) <= self.max_replays:
+            return
+
+        # Extract scores from filenames (format: replay_ep{N}_score{N}_timestamp.json)
+        scored_files = []
+        for path in replay_files:
+            try:
+                # Parse score from filename
+                name = path.stem  # e.g., "replay_ep42_score5_20241213_143052"
+                parts = name.split("_")
+                for part in parts:
+                    if part.startswith("score"):
+                        score = int(part[5:])
+                        scored_files.append((score, path))
+                        break
+            except (ValueError, IndexError):
+                # If parsing fails, keep the file (score=infinity)
+                scored_files.append((float('inf'), path))
+
+        # Sort by score (lowest first) and delete extras
+        scored_files.sort(key=lambda x: x[0])
+        files_to_delete = len(scored_files) - self.max_replays
+
+        for i in range(files_to_delete):
+            score, path = scored_files[i]
+            print(f"[Replay] Removing old replay: score {score}")
+            path.unlink()
 
     def load_replay(self, filepath: str) -> ReplayData:
         """
@@ -276,7 +313,8 @@ class ReplayWindow:
         grid_width: int = 20,
         grid_height: int = 20,
         cell_size: int = 25,
-        fps: int = 10
+        fps: int = 10,
+        max_replays: int = 10
     ):
         """
         Initialize the replay window.
@@ -286,13 +324,14 @@ class ReplayWindow:
             grid_height: Game grid height
             cell_size: Size of each cell in pixels
             fps: Playback speed
+            max_replays: Maximum replays to keep (highest scores)
         """
         self.grid_width = grid_width
         self.grid_height = grid_height
         self.cell_size = cell_size
         self.fps = fps
 
-        self.replay_manager = ReplayManager()
+        self.replay_manager = ReplayManager(max_replays=max_replays)
         self.running = False
         self.window = None
         self.thread: Optional[threading.Thread] = None
