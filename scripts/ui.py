@@ -14,13 +14,19 @@ Usage:
     python scripts/ui.py
 """
 import sys
+import os
 import ctypes
+import warnings
 from pathlib import Path
 from contextlib import contextmanager
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+# Suppress pygame messages
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+warnings.filterwarnings('ignore', category=UserWarning, module='pygame')
 
 import pygame
 
