@@ -10,11 +10,33 @@ Usage:
 import sys
 import os
 import argparse
+import ctypes
 from pathlib import Path
+from contextlib import contextmanager
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+
+@contextmanager
+def prevent_sleep():
+    """Prevent Windows from sleeping while training."""
+    # Windows API constants
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
+
+    try:
+        # Tell Windows to stay awake
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+        )
+        print("[System] Sleep prevention enabled")
+        yield
+    finally:
+        # Allow sleep again
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+        print("[System] Sleep prevention disabled")
 
 from src.game.snake_env import SnakeEnv
 from src.ai.dqn_agent import DQNAgent
@@ -340,11 +362,12 @@ def main():
     Path(config.training.checkpoint_dir).mkdir(parents=True, exist_ok=True)
     Path(config.replay.save_dir).mkdir(parents=True, exist_ok=True)
 
-    # Start training
-    if args.headless:
-        train_headless(config, device_manager, load_path=args.load)
-    else:
-        train_with_visualization(config, device_manager, load_path=args.load)
+    # Start training (prevent sleep while running)
+    with prevent_sleep():
+        if args.headless:
+            train_headless(config, device_manager, load_path=args.load)
+        else:
+            train_with_visualization(config, device_manager, load_path=args.load)
 
 
 if __name__ == "__main__":
