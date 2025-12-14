@@ -17,6 +17,7 @@ import sys
 import os
 import ctypes
 import warnings
+import subprocess
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -33,6 +34,7 @@ import pygame
 from src.utils.config_loader import load_config
 from src.visualization.main_menu import MainMenu
 from src.visualization.dashboard import TrainingDashboard
+from src.training import Trainer, TrainingConfig, get_default_num_envs
 
 
 @contextmanager
@@ -60,6 +62,7 @@ class UnifiedUI:
 
     def __init__(self, config):
         self.config = config
+        self.training_config = TrainingConfig.from_config(config)
 
         # Initialize pygame and create the main window
         pygame.init()
@@ -130,53 +133,29 @@ class UnifiedUI:
         pygame.display.flip()
 
     def _run_training(self, options):
-        """Run training mode."""
-        # Show loading screen immediately
+        """Run training mode using shared Trainer."""
         self._show_loading_screen("Initializing Training...")
         pygame.display.set_caption("Snake AI - Training")
 
-        from src.game.snake_env import SnakeEnv
-        from src.ai.dqn_agent import DQNAgent
         from src.device.device_manager import DeviceManager
-        from src.visualization.replay_player import ReplayManager
 
         print("\n" + "=" * 60)
         print("Snake AI Training")
         print("=" * 60)
 
-        device_manager = DeviceManager()
+        # Use device selection from menu (defaults to GPU if available)
+        force_cpu = options.get('device', 'cuda') == 'cpu'
+        device_manager = DeviceManager(force_cpu=force_cpu)
         device_manager.print_device_info()
 
+        num_envs = get_default_num_envs()
         show_game = not options.get('headless', False)
+
         print(f"Mode: {'Visual' if show_game else 'Headless'}")
+        print(f"Parallel Environments: {num_envs}")
         print("Press H to toggle between visual/headless mode")
         print("Press ESC to return to menu")
         print("=" * 60 + "\n")
-
-        # Initialize environment and agent
-        env = SnakeEnv(self.config.game.grid_width, self.config.game.grid_height)
-
-        agent = DQNAgent(
-            state_size=env.state_size,
-            action_size=env.action_size,
-            device=device_manager.get_device(),
-            config={
-                "gamma": self.config.training.gamma,
-                "epsilon_start": self.config.training.epsilon_start,
-                "epsilon_min": self.config.training.epsilon_min,
-                "epsilon_decay": self.config.training.epsilon_decay,
-                "learning_rate": self.config.training.learning_rate,
-                "batch_size": self.config.training.batch_size,
-                "buffer_size": self.config.training.buffer_size,
-                "target_update_freq": self.config.training.target_update_freq,
-            }
-        )
-
-        # Load model if specified
-        model_path = options.get('model')
-        if model_path and Path(model_path).exists():
-            print(f"[Training] Loading model from {model_path}")
-            agent.load(model_path)
 
         # Initialize dashboard with the shared screen
         dashboard = TrainingDashboard(
@@ -186,108 +165,33 @@ class UnifiedUI:
             chart_update_interval=self.config.visualization.chart_update_interval,
             show_game=show_game,
             total_episodes=self.config.training.episodes,
+            num_envs=num_envs,
         )
 
-        # Replay manager for saving high scores
-        replay_manager = None
-        if self.config.replay.enabled:
-            replay_manager = ReplayManager(
-                save_dir=self.config.replay.save_dir,
-                max_replays=self.config.replay.max_replays
-            )
+        # Load model path if specified
+        model_path = options.get('model')
+        if model_path and not Path(model_path).exists():
+            model_path = None
 
-        # Training loop
-        total_episodes = self.config.training.episodes
-        running = True
-        step_count = 0
-        high_score = 0
-        recent_scores = []
-
-        # Ensure directories exist
-        Path(self.config.training.checkpoint_dir).mkdir(parents=True, exist_ok=True)
-        Path(self.config.replay.save_dir).mkdir(parents=True, exist_ok=True)
+        # Create trainer with shared training logic
+        trainer = Trainer(
+            config=self.training_config,
+            device=device_manager.get_device(),
+            num_envs=num_envs,
+            dashboard=dashboard,
+            on_high_score=self._play_high_score_replay,
+            load_path=model_path,
+        )
 
         try:
             with prevent_sleep():
-                for episode in range(1, total_episodes + 1):
-                    if not running:
-                        break
-
-                    state = env.reset(record=True)
-                    done = False
-                    loss = None
-
-                    while not done and running:
-                        action = agent.select_action(state, training=True)
-                        next_state, reward, done, info = env.step(action)
-                        agent.store_transition(state, action, reward, next_state, done)
-
-                        step_count += 1
-                        if step_count % 4 == 0:
-                            loss = agent.train_step()
-
-                        state = next_state
-
-                        # Update dashboard
-                        game_state = env.get_game_state() if dashboard.show_game else None
-                        result = dashboard.update(
-                            game_state=game_state,
-                            episode=episode,
-                            score=info["score"],
-                            epsilon=agent.epsilon,
-                            loss=loss,
-                            steps=step_count,
-                            fps=self.config.visualization.render_fps
-                        )
-
-                        if result == False:
-                            running = False
-                        elif result == 'switch_mode':
-                            print(f"\n[Mode] Switched to {'visual' if dashboard.show_game else 'headless'} mode")
-
-                    if not running:
-                        break
-
-                    # Episode complete - update dashboard with final score
-                    score = info["score"]
-                    dashboard.record_episode(episode, score, agent.epsilon, loss)
-                    recent_scores.append(score)
-                    if len(recent_scores) > 100:
-                        recent_scores.pop(0)
-
-                    if score > high_score:
-                        high_score = score
-                        print(f"\n[NEW HIGH SCORE] Episode {episode}: Score {score}!")
-                        if replay_manager:
-                            replay_frames = env.get_replay()
-                            replay_path = replay_manager.save_replay(replay_frames, score, episode)
-                            # Launch replay in separate window
-                            if replay_path:
-                                self._play_high_score_replay(replay_path, score, episode)
-
-                    agent.decay_epsilon()
-
-                    if episode % 10 == 0:
-                        avg_score = sum(recent_scores) / len(recent_scores) if recent_scores else 0
-                        print(
-                            f"Episode {episode}/{total_episodes} | "
-                            f"Score: {score} | Avg: {avg_score:.1f} | "
-                            f"High: {high_score} | Epsilon: {agent.epsilon:.4f}"
-                        )
-
-                    if episode % self.config.training.save_interval == 0:
-                        checkpoint_path = f"{self.config.training.checkpoint_dir}/model_ep{episode}.pth"
-                        agent.save(checkpoint_path)
-                        print(f"[Checkpoint] Saved model at episode {episode}")
-
+                high_score = trainer.train(render_fps=self.config.visualization.render_fps)
         except KeyboardInterrupt:
             print("\n[Training] Interrupted by user")
-
+            high_score = trainer.high_score
         finally:
-            final_path = f"{self.config.training.checkpoint_dir}/final_model.pth"
-            agent.save(final_path)
-            print(f"[Training] Saved final model to {final_path}")
-            dashboard.close()
+            trainer.save_final_model()
+            trainer.close()
 
         print(f"\n[Training] Complete! High score: {high_score}")
         pygame.display.set_caption("Snake AI")
@@ -319,8 +223,17 @@ class UnifiedUI:
 
         print(f"\nLoading model: {model_path}")
 
-        device_manager = DeviceManager()
-        env = SnakeEnv(self.config.game.grid_width, self.config.game.grid_height)
+        # Get observation type from config
+        observation_type = getattr(self.config.training, 'observation_type', 'vector')
+
+        # Use device selection from menu
+        force_cpu = options.get('device', 'cuda') == 'cpu'
+        device_manager = DeviceManager(force_cpu=force_cpu)
+        env = SnakeEnv(
+            self.config.game.grid_width,
+            self.config.game.grid_height,
+            observation_type=observation_type
+        )
 
         agent = DQNAgent(
             state_size=env.state_size,
@@ -654,9 +567,6 @@ class UnifiedUI:
 
     def _play_high_score_replay(self, replay_path, score, episode):
         """Queue a high score replay. Launches viewer if not already running."""
-        import subprocess
-        import os
-
         # Ensure absolute path for the replay file
         replay_path_abs = Path(replay_path)
         if not replay_path_abs.is_absolute():
@@ -672,20 +582,16 @@ class UnifiedUI:
 
         # Check if replay viewer is already running
         if hasattr(self, '_replay_process') and self._replay_process is not None:
-            # Check if still running
             if self._replay_process.poll() is None:
-                # Still running, replay will be picked up from queue
                 print(f"[Replay] Queued: Score {score} (Episode {episode})")
-                return True
+                return
             else:
-                # Process ended, clear reference
                 self._replay_process = None
 
         # Launch replay viewer
         try:
             script_path = str(project_root / "scripts" / "watch_replays.py")
 
-            # Set environment to help pygame initialize in subprocess
             env = os.environ.copy()
             env["SDL_VIDEO_WINDOW_POS"] = "100,100"
 
@@ -713,14 +619,13 @@ class UnifiedUI:
             print(f"[Replay] Playing: Score {score} (Episode {episode})")
         except Exception as e:
             print(f"[Replay] Failed to launch replay viewer: {e}")
-        return True
 
     def _show_error(self, message):
         """Show error message for a few seconds."""
         font = pygame.font.Font(None, 36)
         clock = pygame.time.Clock()
 
-        for _ in range(120):  # ~2 seconds at 60fps
+        for _ in range(120):
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False

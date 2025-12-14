@@ -10,7 +10,9 @@
       "Bash(python:*)",
       "Bash(timeout 5 python:*)",
       "Bash(cat:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(pip show:*)"
     ]
   }
 }

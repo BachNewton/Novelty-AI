@@ -8,7 +8,6 @@ Usage:
     python scripts/train.py --episodes 5000    # Custom episode count
 """
 import sys
-import os
 import argparse
 import ctypes
 from pathlib import Path
@@ -18,31 +17,26 @@ from contextlib import contextmanager
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.device.device_manager import DeviceManager
+from src.utils.config_loader import load_config
+from src.training import Trainer, TrainingConfig, get_default_num_envs
+
 
 @contextmanager
 def prevent_sleep():
     """Prevent Windows from sleeping while training."""
-    # Windows API constants
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
 
     try:
-        # Tell Windows to stay awake
         ctypes.windll.kernel32.SetThreadExecutionState(
             ES_CONTINUOUS | ES_SYSTEM_REQUIRED
         )
         print("[System] Sleep prevention enabled")
         yield
     finally:
-        # Allow sleep again
         ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
         print("[System] Sleep prevention disabled")
-
-from src.game.snake_env import SnakeEnv
-from src.ai.dqn_agent import DQNAgent
-from src.device.device_manager import DeviceManager
-from src.utils.config_loader import load_config
-from src.visualization.replay_player import ReplayWindow
 
 
 def parse_args():
@@ -77,256 +71,113 @@ def parse_args():
         default=None,
         help="Load model from checkpoint"
     )
+    parser.add_argument(
+        "--num-envs",
+        type=int,
+        default=None,
+        help="Number of parallel environments (default: auto-detect based on CPU cores)"
+    )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Auto-detect num_envs if not specified
+    if args.num_envs is None:
+        args.num_envs = get_default_num_envs()
+
+    return args
 
 
-def train_headless(config, device_manager, start_episode: int = 0, load_path: str = None):
-    """
-    Train without visualization (maximum speed).
+def train_headless(config, device_manager, load_path: str = None, num_envs: int = 1):
+    """Train without visualization (maximum speed)."""
+    from src.visualization.replay_player import ReplayWindow
 
-    Opens a replay window when new high scores are achieved.
-    """
     print("\n[Training] Starting headless training...")
     print("[Training] Replays will open in a separate window when new high scores are achieved")
     print("[Training] Press Ctrl+C to stop training\n")
 
-    # Initialize environment and agent
-    env = SnakeEnv(config.game.grid_width, config.game.grid_height)
-
-    agent = DQNAgent(
-        state_size=env.state_size,
-        action_size=env.action_size,
-        device=device_manager.get_device(),
-        config={
-            "gamma": config.training.gamma,
-            "epsilon_start": config.training.epsilon_start,
-            "epsilon_min": config.training.epsilon_min,
-            "epsilon_decay": config.training.epsilon_decay,
-            "learning_rate": config.training.learning_rate,
-            "batch_size": config.training.batch_size,
-            "buffer_size": config.training.buffer_size,
-            "target_update_freq": config.training.target_update_freq,
-        }
-    )
-
-    # Load checkpoint if specified
-    if load_path:
-        print(f"[Training] Loading model from {load_path}")
-        agent.load(load_path)
-
-    # Initialize replay window (will open when needed)
+    # Initialize replay window for high score playback
     replay_window = ReplayWindow(
-        grid_width=config.game.grid_width,
-        grid_height=config.game.grid_height,
-        fps=config.replay.playback_fps,
-        max_replays=config.replay.max_replays
+        grid_width=config.grid_width,
+        grid_height=config.grid_height,
+        fps=10,
+        max_replays=config.max_replays
     )
 
-    # Training stats
-    high_score = 0
-    recent_scores = []
-    total_episodes = config.training.episodes
-    step_count = 0
+    def on_high_score(replay_path, score, episode):
+        """Callback when high score achieved."""
+        from src.visualization.replay_player import ReplayManager
+        replay_manager = ReplayManager(save_dir=config.replay_dir)
+        try:
+            replay_data = replay_manager.load_replay(replay_path)
+            replay_window.queue_replay(
+                frames=replay_data.frames,
+                score=score,
+                episode=episode,
+                save=False  # Already saved by trainer
+            )
+        except Exception as e:
+            print(f"[Replay] Error loading replay: {e}")
+
+    trainer = Trainer(
+        config=config,
+        device=device_manager.get_device(),
+        num_envs=num_envs,
+        dashboard=None,
+        on_high_score=on_high_score,
+        load_path=load_path,
+    )
 
     try:
-        for episode in range(start_episode + 1, total_episodes + 1):
-            # Reset environment with recording
-            state = env.reset(record=True)
-            total_reward = 0
-            done = False
-
-            while not done:
-                # Select and execute action
-                action = agent.select_action(state, training=True)
-                next_state, reward, done, info = env.step(action)
-
-                # Store transition
-                agent.store_transition(state, action, reward, next_state, done)
-
-                # Train every 4 steps
-                step_count += 1
-                if step_count % 4 == 0:
-                    agent.train_step()
-
-                state = next_state
-                total_reward += reward
-
-            # Episode complete
-            score = info["score"]
-            recent_scores.append(score)
-            if len(recent_scores) > 100:
-                recent_scores.pop(0)
-
-            # Check for new high score
-            if score > high_score:
-                high_score = score
-                print(f"\n[NEW HIGH SCORE] Episode {episode}: Score {score}!")
-
-                # Queue replay for playback
-                if config.replay.enabled:
-                    replay_frames = env.get_replay()
-                    replay_window.queue_replay(
-                        frames=replay_frames,
-                        score=score,
-                        episode=episode,
-                        save=True
-                    )
-
-            # Decay epsilon
-            agent.decay_epsilon()
-
-            # Progress output
-            if episode % 10 == 0:
-                avg_score = sum(recent_scores) / len(recent_scores)
-                print(
-                    f"Episode {episode}/{total_episodes} | "
-                    f"Score: {score} | Avg: {avg_score:.1f} | "
-                    f"High: {high_score} | Epsilon: {agent.epsilon:.4f}"
-                )
-
-            # Save checkpoint
-            if episode % config.training.save_interval == 0:
-                checkpoint_path = f"{config.training.checkpoint_dir}/model_ep{episode}.pth"
-                agent.save(checkpoint_path)
-                print(f"[Checkpoint] Saved model at episode {episode}")
-
+        high_score = trainer.train()
     except KeyboardInterrupt:
         print("\n[Training] Interrupted by user")
-
+        high_score = trainer.high_score
     finally:
-        # Save final model
-        final_path = f"{config.training.checkpoint_dir}/final_model.pth"
-        agent.save(final_path)
-        print(f"[Training] Saved final model to {final_path}")
-
-        # Clean up replay window
+        trainer.save_final_model()
+        trainer.close()
         replay_window.stop()
 
     print(f"\n[Training] Complete! High score: {high_score}")
 
 
-def train_with_visualization(config, device_manager, start_episode: int = 0, load_path: str = None):
+def train_with_visualization(config, device_manager, load_path: str = None, num_envs: int = 1):
     """Train with real-time visualization dashboard."""
-    import pygame
-
     from src.visualization.dashboard import TrainingDashboard
 
     print("\n[Training] Starting training with visualization...")
-    print("[Training] Close the window or press ESC to stop\n")
+    print("[Training] Close the window or press ESC to stop")
+    print("[Training] Press H to toggle headless mode\n")
 
-    # Initialize environment and agent
-    env = SnakeEnv(config.game.grid_width, config.game.grid_height)
-
-    agent = DQNAgent(
-        state_size=env.state_size,
-        action_size=env.action_size,
-        device=device_manager.get_device(),
-        config={
-            "gamma": config.training.gamma,
-            "epsilon_start": config.training.epsilon_start,
-            "epsilon_min": config.training.epsilon_min,
-            "epsilon_decay": config.training.epsilon_decay,
-            "learning_rate": config.training.learning_rate,
-            "batch_size": config.training.batch_size,
-            "buffer_size": config.training.buffer_size,
-            "target_update_freq": config.training.target_update_freq,
-        }
-    )
-
-    # Load checkpoint if specified
-    if load_path:
-        print(f"[Training] Loading model from {load_path}")
-        agent.load(load_path)
-
-    # Initialize visualization
+    # Initialize dashboard
     dashboard = TrainingDashboard(
-        window_width=config.visualization.window_width,
-        window_height=config.visualization.window_height,
-        grid_width=config.game.grid_width,
-        grid_height=config.game.grid_height,
-        chart_update_interval=config.visualization.chart_update_interval,
+        window_width=1400,
+        window_height=900,
+        grid_width=config.grid_width,
+        grid_height=config.grid_height,
+        chart_update_interval=25,
+        total_episodes=config.episodes,
+        num_envs=num_envs,
     )
 
-    # Training loop
-    total_episodes = config.training.episodes
-    running = True
-
-    step_count = 0
+    trainer = Trainer(
+        config=config,
+        device=device_manager.get_device(),
+        num_envs=num_envs,
+        dashboard=dashboard,
+        on_high_score=None,  # Dashboard handles high score display
+        load_path=load_path,
+    )
 
     try:
-        for episode in range(start_episode + 1, total_episodes + 1):
-            if not running:
-                break
-
-            # Reset environment with recording
-            state = env.reset(record=True)
-            done = False
-            loss = None
-
-            while not done and running:
-                # Select and execute action
-                action = agent.select_action(state, training=True)
-                next_state, reward, done, info = env.step(action)
-
-                # Store transition
-                agent.store_transition(state, action, reward, next_state, done)
-
-                # Train every 4 steps (reduces CPU load, keeps window responsive)
-                step_count += 1
-                if step_count % 4 == 0:
-                    loss = agent.train_step()
-
-                state = next_state
-
-                # Update visualization
-                game_state = env.get_game_state()
-                running = dashboard.update(
-                    game_state=game_state,
-                    episode=episode,
-                    score=info["score"],
-                    epsilon=agent.epsilon,
-                    loss=loss,
-                    fps=config.visualization.render_fps
-                )
-
-            if not running:
-                break
-
-            # Episode complete
-            score = info["score"]
-
-            # Decay epsilon
-            agent.decay_epsilon()
-
-            # Console output
-            if episode % 10 == 0:
-                avg_score = dashboard.metrics.avg_scores[-1] if dashboard.metrics.avg_scores else 0
-                print(
-                    f"Episode {episode}/{total_episodes} | "
-                    f"Score: {score} | Avg: {avg_score:.1f} | "
-                    f"High: {dashboard.metrics.high_score} | Epsilon: {agent.epsilon:.4f}"
-                )
-
-            # Save checkpoint
-            if episode % config.training.save_interval == 0:
-                checkpoint_path = f"{config.training.checkpoint_dir}/model_ep{episode}.pth"
-                agent.save(checkpoint_path)
-                print(f"[Checkpoint] Saved model at episode {episode}")
-
+        high_score = trainer.train(render_fps=30)
     except KeyboardInterrupt:
         print("\n[Training] Interrupted by user")
-
+        high_score = trainer.high_score
     finally:
-        # Save final model
-        final_path = f"{config.training.checkpoint_dir}/final_model.pth"
-        agent.save(final_path)
-        print(f"[Training] Saved final model to {final_path}")
+        trainer.save_final_model()
+        trainer.close()
 
-        # Clean up
-        dashboard.close()
-
-    print(f"\n[Training] Complete! High score: {dashboard.metrics.high_score}")
+    print(f"\n[Training] Complete! High score: {high_score}")
 
 
 def main():
@@ -334,40 +185,40 @@ def main():
     args = parse_args()
 
     # Load configuration
-    config = load_config(args.config)
+    raw_config = load_config(args.config)
 
     # Override config with command line args
     if args.episodes:
-        config.training.episodes = args.episodes
+        raw_config.training.episodes = args.episodes
+
+    # Create training config from loaded config
+    config = TrainingConfig.from_config(raw_config)
 
     # Initialize device manager
     preferred = None
-    if config.device.preferred != "auto":
-        preferred = config.device.preferred
+    if raw_config.device.preferred != "auto":
+        preferred = raw_config.device.preferred
 
     device_manager = DeviceManager(
         preferred=preferred,
-        force_cpu=args.cpu or config.device.force_cpu
+        force_cpu=args.cpu or raw_config.device.force_cpu
     )
 
     print("=" * 60)
     print("Snake AI Training")
     print("=" * 60)
     device_manager.print_device_info()
-    print(f"Episodes: {config.training.episodes}")
+    print(f"Episodes: {config.episodes}")
     print(f"Visualization: {'Disabled' if args.headless else 'Enabled'}")
+    print(f"Parallel environments: {args.num_envs}")
     print("=" * 60)
 
-    # Ensure directories exist
-    Path(config.training.checkpoint_dir).mkdir(parents=True, exist_ok=True)
-    Path(config.replay.save_dir).mkdir(parents=True, exist_ok=True)
-
-    # Start training (prevent sleep while running)
+    # Start training
     with prevent_sleep():
         if args.headless:
-            train_headless(config, device_manager, load_path=args.load)
+            train_headless(config, device_manager, load_path=args.load, num_envs=args.num_envs)
         else:
-            train_with_visualization(config, device_manager, load_path=args.load)
+            train_with_visualization(config, device_manager, load_path=args.load, num_envs=args.num_envs)
 
 
 if __name__ == "__main__":

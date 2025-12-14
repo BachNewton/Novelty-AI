@@ -27,6 +27,8 @@ class TrainingMetrics:
     avg_scores: List[float] = field(default_factory=list)
     epsilons: List[float] = field(default_factory=list)
     losses: List[float] = field(default_factory=list)
+    eps_per_sec: List[float] = field(default_factory=list)
+    eps_per_sec_episodes: List[int] = field(default_factory=list)
 
     high_score: int = 0
     total_steps: int = 0
@@ -58,7 +60,8 @@ class TrainingDashboard:
         grid_height: int = 20,
         chart_update_interval: int = 10,
         show_game: bool = True,
-        total_episodes: int = 10000
+        total_episodes: int = 10000,
+        num_envs: int = 1
     ):
         """
         Initialize the dashboard.
@@ -72,6 +75,7 @@ class TrainingDashboard:
             chart_update_interval: Update charts every N episodes
             show_game: If True, show game panel; if False, show training stats
             total_episodes: Total episodes for progress calculation
+            num_envs: Number of parallel environments being used
         """
         self.owns_screen = screen is None
         self.window_width = max(window_width, self.MIN_WIDTH)
@@ -80,6 +84,7 @@ class TrainingDashboard:
         self.grid_height = grid_height
         self.show_game = show_game
         self.total_episodes = total_episodes
+        self.num_envs = num_envs
 
         if screen is None:
             pygame.init()
@@ -121,35 +126,64 @@ class TrainingDashboard:
         self.clock = pygame.time.Clock()
 
     def _recalculate_layout(self):
-        """Recalculate panel positions based on current window size."""
-        w, h = self.window_width, self.window_height
+        """
+        Recalculate panel positions based on current window size.
 
-        # Left panel size
-        self.left_panel_size = min(500, h - 250)
-        self.game_cell_size = self.left_panel_size // max(self.grid_width, self.grid_height)
+        Layout:
+        +------------------+------------------+
+        |  Game/Status     |  Training        |
+        |  (top left)      |  Progress        |
+        +------------------+------------------+
+        |     Hardware Utilization (full)     |
+        |     CPU cores    |    GPU stats     |
+        +-----------------------------------------+
+        |         Score Chart (full width)    |
+        +-----------------------------------------+
+        |    Epsilon      |   Episodes/sec    |
+        +-----------------------------------------+
+        """
+        w, h = self.window_width, self.window_height
+        gap = 10
+        padding = 20
+
+        # Top section: Game/Status (left), Metrics (right) - compact
+        top_section_height = min(220, int(h * 0.25))
+
+        # Hardware panel: full width below top section
+        hardware_height = 160
+
+        # Chart section gets the rest
+        chart_height = h - top_section_height - hardware_height - gap * 2 - padding * 2
+
+        # Left panel (game/status)
+        left_panel_width = min(400, (w - gap - padding * 2) // 2)
+        self.game_cell_size = left_panel_width // max(self.grid_width, self.grid_height)
         self.game_size = self.game_cell_size * max(self.grid_width, self.grid_height)
 
-        # Panel regions
-        self.game_rect = pygame.Rect(20, 20, self.game_size, self.game_size)
+        self.game_rect = pygame.Rect(
+            padding, padding,
+            left_panel_width, top_section_height
+        )
 
-        # Right panels should align with left panel height
-        right_panel_x = self.game_size + 40
-        right_panel_width = w - self.game_size - 60
-        metrics_height = 150  # Metrics panel with room for all stats
-        gap = 10
-        chart_height = self.game_size - metrics_height - gap  # Fill remaining space
+        # Metrics panel (right of game/status)
+        right_panel_x = padding + left_panel_width + gap
+        right_panel_width = w - right_panel_x - padding
 
         self.metrics_rect = pygame.Rect(
-            right_panel_x, 20,
-            right_panel_width, metrics_height
+            right_panel_x, padding,
+            right_panel_width, top_section_height
         )
-        self.chart_rect = pygame.Rect(
-            right_panel_x, 20 + metrics_height + gap,
-            right_panel_width, chart_height
-        )
+
+        # Hardware panel - full width below top section
         self.hardware_rect = pygame.Rect(
-            20, self.game_size + 40,
-            w - 40, h - self.game_size - 60
+            padding, padding + top_section_height + gap,
+            w - padding * 2, hardware_height
+        )
+
+        # Charts panel - full width at bottom
+        self.chart_rect = pygame.Rect(
+            padding, padding + top_section_height + hardware_height + gap * 2,
+            w - padding * 2, chart_height
         )
 
         # Create/update game renderer if showing game
@@ -289,6 +323,11 @@ class TrainingDashboard:
             self.episodes_per_sec = episodes_completed / elapsed
             self._last_episode_count = current_episode_count
 
+            # Store episodes/sec history for charting
+            if self.episodes_per_sec > 0 and current_episode_count > 0:
+                self.metrics.eps_per_sec.append(self.episodes_per_sec)
+                self.metrics.eps_per_sec_episodes.append(current_episode_count)
+
             # Calculate steps completed since last update
             steps_completed = self.total_steps - self.last_step_count
             self.steps_per_sec = steps_completed / elapsed
@@ -341,37 +380,26 @@ class TrainingDashboard:
         """Draw training status panel (headless mode)."""
         pygame.draw.rect(self.screen, PANEL_COLOR, self.game_rect, border_radius=8)
 
-        x = self.game_rect.x + 20
-        y = self.game_rect.y + 20
+        x = self.game_rect.x + 15
+        y = self.game_rect.y + 15
+        panel_bottom = self.game_rect.bottom - 15
 
         # Title
-        title = self.font_title.render("Headless Training", True, ACCENT_COLOR)
+        title = self.font_large.render("Headless Training", True, ACCENT_COLOR)
         self.screen.blit(title, (x, y))
-        y += 45
+        y += 30
 
         # Mode hint
-        hint = self.font_medium.render("Press H to show game", True, (150, 150, 150))
+        hint = self.font_small.render("Press H to show game", True, (150, 150, 150))
         self.screen.blit(hint, (x, y))
-        y += 40
+        y += 25
 
-        # Performance stats
-        stats = [
-            ("Episodes/sec:", f"{self.episodes_per_sec:.1f}"),
+        # Performance stats - use two columns to save vertical space
+        stats_left = [
+            ("Envs:", f"{self.num_envs}"),
+            ("Eps/sec:", f"{self.episodes_per_sec:.1f}"),
             ("Steps/sec:", f"{self.steps_per_sec:.0f}"),
-            ("Total Steps:", f"{self.total_steps:,}"),
         ]
-
-        # ETA
-        if self.episodes_per_sec > 0 and episode < self.total_episodes:
-            remaining = self.total_episodes - episode
-            eta_seconds = remaining / self.episodes_per_sec
-            if eta_seconds < 60:
-                eta_str = f"{eta_seconds:.0f}s"
-            elif eta_seconds < 3600:
-                eta_str = f"{eta_seconds / 60:.1f}m"
-            else:
-                eta_str = f"{eta_seconds / 3600:.1f}h"
-            stats.append(("ETA:", eta_str))
 
         # Elapsed
         elapsed = time.time() - self.start_time
@@ -381,34 +409,62 @@ class TrainingDashboard:
             elapsed_str = f"{elapsed / 60:.1f}m"
         else:
             elapsed_str = f"{elapsed / 3600:.1f}h"
-        stats.append(("Elapsed:", elapsed_str))
 
-        # Progress
+        # ETA
+        eta_str = "--"
+        if self.episodes_per_sec > 0 and episode < self.total_episodes:
+            remaining = self.total_episodes - episode
+            eta_seconds = remaining / self.episodes_per_sec
+            if eta_seconds < 60:
+                eta_str = f"{eta_seconds:.0f}s"
+            elif eta_seconds < 3600:
+                eta_str = f"{eta_seconds / 60:.1f}m"
+            else:
+                eta_str = f"{eta_seconds / 3600:.1f}h"
+
+        stats_right = [
+            ("Elapsed:", elapsed_str),
+            ("ETA:", eta_str),
+            ("Steps:", f"{self.total_steps:,}"),
+        ]
+
+        col_width = (self.game_rect.width - 30) // 2
+        row_height = 24
+
+        for i, (label, value) in enumerate(stats_left):
+            label_surf = self.font_small.render(label, True, TEXT_COLOR)
+            value_surf = self.font_medium.render(value, True, ACCENT_COLOR)
+            self.screen.blit(label_surf, (x, y + i * row_height))
+            self.screen.blit(value_surf, (x + 70, y + i * row_height - 2))
+
+        for i, (label, value) in enumerate(stats_right):
+            label_surf = self.font_small.render(label, True, TEXT_COLOR)
+            value_surf = self.font_medium.render(value, True, ACCENT_COLOR)
+            self.screen.blit(label_surf, (x + col_width, y + i * row_height))
+            self.screen.blit(value_surf, (x + col_width + 70, y + i * row_height - 2))
+
+        y += len(stats_left) * row_height + 15
+
+        # Progress bar at bottom of panel
         progress = episode / self.total_episodes * 100 if self.total_episodes > 0 else 0
-        stats.append(("Progress:", f"{progress:.1f}%"))
+        bar_width = self.game_rect.width - 30
+        bar_height = 18
+        bar_y = min(y, panel_bottom - bar_height - 20)
 
-        y += 10
-        for label, value in stats:
-            label_surf = self.font_medium.render(label, True, TEXT_COLOR)
-            value_surf = self.font_large.render(value, True, ACCENT_COLOR)
-            self.screen.blit(label_surf, (x, y))
-            self.screen.blit(value_surf, (x + 140, y - 2))
-            y += 32
+        # Progress label
+        progress_label = self.font_small.render(f"Progress: {progress:.1f}%", True, TEXT_COLOR)
+        self.screen.blit(progress_label, (x, bar_y - 18))
 
-        # Progress bar
-        y += 15
-        bar_width = self.game_rect.width - 40
-        bar_height = 20
-        bg_rect = pygame.Rect(x, y, bar_width, bar_height)
+        bg_rect = pygame.Rect(x, bar_y, bar_width, bar_height)
         pygame.draw.rect(self.screen, (50, 50, 60), bg_rect, border_radius=4)
 
         fill_width = int(progress / 100 * bar_width)
         if fill_width > 0:
-            fill_rect = pygame.Rect(x, y, fill_width, bar_height)
+            fill_rect = pygame.Rect(x, bar_y, fill_width, bar_height)
             pygame.draw.rect(self.screen, ACCENT_COLOR, fill_rect, border_radius=4)
 
         progress_text = self.font_small.render(f"{episode}/{self.total_episodes}", True, TEXT_COLOR)
-        self.screen.blit(progress_text, (x + bar_width // 2 - progress_text.get_width() // 2, y + 2))
+        self.screen.blit(progress_text, (x + bar_width // 2 - progress_text.get_width() // 2, bar_y + 1))
 
     def _draw_metrics_panel(
         self,
@@ -437,6 +493,7 @@ class TrainingDashboard:
             (f"High Score: {self.metrics.high_score}", ACCENT_COLOR),
             (f"Avg Score (100): {avg_score:.1f}", TEXT_COLOR),
             (f"Epsilon: {epsilon:.4f}", WARNING_COLOR if epsilon > 0.1 else TEXT_COLOR),
+            (f"Parallel Envs: {self.num_envs}", ACCENT_COLOR if self.num_envs > 1 else TEXT_COLOR),
         ]
 
         col_width = (self.metrics_rect.width - 40) // 2
@@ -447,7 +504,7 @@ class TrainingDashboard:
             self.screen.blit(text_surf, (x + col * col_width, y + row * 28))
 
     def _draw_chart_panel(self):
-        """Draw training progress charts."""
+        """Draw training progress charts - Score on top row, Epsilon + Eps/sec on bottom row."""
         pygame.draw.rect(self.screen, PANEL_COLOR, self.chart_rect, border_radius=8)
 
         if len(self.metrics.episodes) < 2:
@@ -459,14 +516,25 @@ class TrainingDashboard:
             )
             return
 
-        padding = 50
-        chart_x = self.chart_rect.x + padding
-        chart_y = self.chart_rect.y + 30
-        chart_w = self.chart_rect.width - padding * 2
-        chart_h = (self.chart_rect.height - 80) // 2
+        # Layout: Score (full width top), Epsilon + Episodes/sec (side by side bottom)
+        y_label_space = 50  # Space for y-axis labels on left
+        gap = 30  # Gap between charts for labels
+        padding_top = 15
+        padding_right = 25
+        padding_bottom = 25  # Extra space for x-axis labels
 
+        # Calculate chart dimensions - 2 rows
+        full_width = self.chart_rect.width - y_label_space - padding_right
+        half_width = (full_width - gap) // 2
+        available_height = self.chart_rect.height - padding_top - padding_bottom - gap
+        chart_h = available_height // 2
+
+        chart_x = self.chart_rect.x + y_label_space
+
+        # Score chart (top row - full width)
+        chart1_y = self.chart_rect.y + padding_top
         self._draw_line_chart(
-            x=chart_x, y=chart_y, width=chart_w, height=chart_h,
+            x=chart_x, y=chart1_y, width=full_width, height=chart_h,
             data=self.metrics.scores,
             avg_data=self.metrics.avg_scores,
             color=(0, 200, 100),
@@ -476,14 +544,38 @@ class TrainingDashboard:
             episodes=self.metrics.episodes
         )
 
+        # Bottom row - Epsilon (left) and Episodes/sec (right)
+        row2_y = chart1_y + chart_h + gap
+
+        # Epsilon chart (bottom left)
         self._draw_line_chart(
-            x=chart_x, y=chart_y + chart_h + 40, width=chart_w, height=chart_h,
+            x=chart_x, y=row2_y, width=half_width, height=chart_h,
             data=self.metrics.epsilons,
             color=(0, 200, 255),
             label="Epsilon",
             y_range=(0, 1),
             episodes=self.metrics.episodes
         )
+
+        # Episodes/sec chart (bottom right)
+        chart3_x = chart_x + half_width + gap
+        if len(self.metrics.eps_per_sec) >= 2:
+            self._draw_line_chart(
+                x=chart3_x, y=row2_y, width=half_width, height=chart_h,
+                data=self.metrics.eps_per_sec,
+                color=(255, 180, 0),
+                label="Episodes/sec",
+                episodes=self.metrics.eps_per_sec_episodes
+            )
+        else:
+            # Draw placeholder for eps/sec chart
+            chart_rect = pygame.Rect(chart3_x, row2_y, half_width, chart_h)
+            pygame.draw.rect(self.screen, (40, 40, 50), chart_rect, border_radius=4)
+            label = self.font_small.render("Episodes/sec", True, (255, 180, 0))
+            self.screen.blit(label, (chart3_x + 5, row2_y + 5))
+            waiting = self.font_small.render("Collecting...", True, (100, 100, 100))
+            self.screen.blit(waiting, (chart3_x + half_width // 2 - waiting.get_width() // 2,
+                                       row2_y + chart_h // 2))
 
     def _draw_line_chart(
         self,
@@ -549,10 +641,19 @@ class TrainingDashboard:
         val_surf = self.font_small.render(val_text, True, TEXT_COLOR)
         self.screen.blit(val_surf, (x + width - val_surf.get_width() - 5, y + 5))
 
-        max_surf = self.font_small.render(f"{max_val:.1f}", True, (100, 100, 100))
-        min_surf = self.font_small.render(f"{min_val:.1f}", True, (100, 100, 100))
-        self.screen.blit(max_surf, (x - max_surf.get_width() - 5, y))
-        self.screen.blit(min_surf, (x - min_surf.get_width() - 5, y + height - 15))
+        # Draw y-axis labels for all 5 grid lines
+        for i in range(5):
+            val = max_val - (max_val - min_val) * i / 4
+            gy = y + int(height * i / 4)
+            # Format based on value magnitude
+            if abs(val) >= 100:
+                val_text = f"{val:.0f}"
+            elif abs(val) >= 10:
+                val_text = f"{val:.1f}"
+            else:
+                val_text = f"{val:.2f}"
+            val_surf = self.font_small.render(val_text, True, (100, 100, 100))
+            self.screen.blit(val_surf, (x - val_surf.get_width() - 5, gy - 7))
 
         # Draw x-axis episode labels (scale count with chart width)
         if plot_episodes and len(plot_episodes) >= 2:
@@ -566,7 +667,7 @@ class TrainingDashboard:
                 self.screen.blit(ep_surf, (sx - ep_surf.get_width() // 2, y + height + 2))
 
     def _draw_hardware_panel(self):
-        """Draw hardware utilization panel."""
+        """Draw hardware utilization panel (full width)."""
         pygame.draw.rect(self.screen, PANEL_COLOR, self.hardware_rect, border_radius=8)
 
         x = self.hardware_rect.x + 20
@@ -578,24 +679,25 @@ class TrainingDashboard:
 
         stats = self.hardware_monitor.get_stats()
 
+        # CPU Section (left side)
         cpu_title = self.font_medium.render("CPU (per core)", True, TEXT_COLOR)
         self.screen.blit(cpu_title, (x, y))
-        y += 25
+        cpu_y = y + 25
+
+        bar_width = 80
+        bar_height = 14
+        label_width = 22
+        pct_width = 40
+        item_width = label_width + bar_width + pct_width + 10
+        cores_per_row = 4  # Fixed 4 columns
 
         if stats and stats.cpu:
-            bar_width = 80
-            bar_height = 14
-            label_width = 22
-            pct_width = 40
-            item_width = label_width + bar_width + pct_width + 10
-            cores_per_row = 4
-
             for i, percent in enumerate(stats.cpu.per_core_percent):
                 col = i % cores_per_row
                 row = i // cores_per_row
 
                 bx = x + col * item_width
-                by = y + row * (bar_height + 8)
+                by = cpu_y + row * (bar_height + 8)
 
                 label = self.font_small.render(f"{i}", True, (150, 150, 150))
                 label_x = bx + label_width - label.get_width()
@@ -614,9 +716,9 @@ class TrainingDashboard:
                 pct_text = self.font_small.render(f"{percent:.0f}%", True, TEXT_COLOR)
                 self.screen.blit(pct_text, (bar_x + bar_width + 5, by))
 
-        # GPU Section
-        gpu_x = self.hardware_rect.x + self.hardware_rect.width // 2 + 20
-        gpu_y = self.hardware_rect.y + 50
+        # GPU Section (right side) - position after CPU section
+        gpu_x = x + cores_per_row * item_width + 60
+        gpu_y = y
 
         gpu_info = self.hardware_monitor.get_gpu_info()
 
@@ -628,30 +730,29 @@ class TrainingDashboard:
             util_label = self.font_small.render("Utilization:", True, (150, 150, 150))
             self.screen.blit(util_label, (gpu_x, gpu_y))
 
-            bar_width = 150
-            bar_height = 14
-            bg_rect = pygame.Rect(gpu_x + 80, gpu_y, bar_width, bar_height)
+            gpu_bar_width = 150
+            bg_rect = pygame.Rect(gpu_x + 80, gpu_y, gpu_bar_width, bar_height)
             pygame.draw.rect(self.screen, (50, 50, 60), bg_rect, border_radius=3)
 
             util = gpu_info['utilization']
-            fill_width = int(util / 100 * bar_width)
+            fill_width = int(util / 100 * gpu_bar_width)
             if fill_width > 0:
                 bar_color = ACCENT_COLOR if util < 80 else WARNING_COLOR if util < 95 else DANGER_COLOR
                 fill_rect = pygame.Rect(gpu_x + 80, gpu_y, fill_width, bar_height)
                 pygame.draw.rect(self.screen, bar_color, fill_rect, border_radius=3)
 
             pct_text = self.font_small.render(f"{util:.0f}%", True, TEXT_COLOR)
-            self.screen.blit(pct_text, (gpu_x + 85 + bar_width, gpu_y))
+            self.screen.blit(pct_text, (gpu_x + 85 + gpu_bar_width, gpu_y))
             gpu_y += 25
 
             mem_label = self.font_small.render("Memory:", True, (150, 150, 150))
             self.screen.blit(mem_label, (gpu_x, gpu_y))
 
-            bg_rect = pygame.Rect(gpu_x + 80, gpu_y, bar_width, bar_height)
+            bg_rect = pygame.Rect(gpu_x + 80, gpu_y, gpu_bar_width, bar_height)
             pygame.draw.rect(self.screen, (50, 50, 60), bg_rect, border_radius=3)
 
             mem_pct = gpu_info['memory_percent']
-            fill_width = int(mem_pct / 100 * bar_width)
+            fill_width = int(mem_pct / 100 * gpu_bar_width)
             if fill_width > 0:
                 bar_color = ACCENT_COLOR if mem_pct < 80 else WARNING_COLOR if mem_pct < 95 else DANGER_COLOR
                 fill_rect = pygame.Rect(gpu_x + 80, gpu_y, fill_width, bar_height)
@@ -662,7 +763,7 @@ class TrainingDashboard:
             else:
                 mem_text = f"{mem_pct:.0f}%"
             mem_surf = self.font_small.render(mem_text, True, TEXT_COLOR)
-            self.screen.blit(mem_surf, (gpu_x + 85 + bar_width, gpu_y))
+            self.screen.blit(mem_surf, (gpu_x + 85 + gpu_bar_width, gpu_y))
         else:
             no_gpu = self.font_small.render("GPU stats not available", True, (100, 100, 100))
             self.screen.blit(no_gpu, (gpu_x, gpu_y))

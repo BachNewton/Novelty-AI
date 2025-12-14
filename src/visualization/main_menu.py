@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Tuple, List, Optional
 
+import torch
+
 from .ui_components import Button, Dropdown, BG_COLOR, TEXT_COLOR, ACCENT_COLOR
 
 
@@ -97,9 +99,11 @@ class MainMenu:
         # Dropdowns
         models = self._get_available_models()
         replays = self._get_available_replays()
+        devices = self._get_available_devices()
 
         self.model_dropdown = Dropdown(0, 0, 350, models, label="Model:")
         self.replay_dropdown = Dropdown(0, 0, 350, replays, label="Replay:")
+        self.device_dropdown = Dropdown(0, 0, 350, devices, label="Device:")
 
         # Calculate initial layout
         self._recalculate_layout()
@@ -138,6 +142,7 @@ class MainMenu:
 
         self.model_dropdown.set_position(dropdown_x, dropdown_y)
         self.replay_dropdown.set_position(dropdown_x, dropdown_y + 50)
+        self.device_dropdown.set_position(dropdown_x, dropdown_y + 100)
 
         # Quit button - bottom center (with more space from footer)
         quit_y = h - 120
@@ -192,6 +197,20 @@ class MainMenu:
 
         return replays if len(replays) > 1 else ["(no replays found)"]
 
+    def _get_available_devices(self) -> List[str]:
+        """Get list of available compute devices."""
+        devices = []
+
+        # Check for CUDA GPU
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            devices.append(f"GPU ({gpu_name})")
+
+        # CPU is always available
+        devices.append("CPU")
+
+        return devices
+
     def _refresh_dropdowns(self):
         """Refresh dropdown items."""
         self.model_dropdown.refresh_items(self._get_available_models())
@@ -231,9 +250,10 @@ class MainMenu:
                     if button.handle_event(event):
                         return self._build_result(mode)
 
-                # Handle dropdowns
-                self.model_dropdown.handle_event(event)
-                self.replay_dropdown.handle_event(event)
+                # Handle dropdowns (stop if one consumes the event)
+                if not self.model_dropdown.handle_event(event):
+                    if not self.replay_dropdown.handle_event(event):
+                        self.device_dropdown.handle_event(event)
 
             self._draw()
             self.clock.tick(60)
@@ -270,6 +290,13 @@ class MainMenu:
         else:
             options['replay'] = None
 
+        # Add selected device
+        device_selection = self.device_dropdown.get_selected()
+        if device_selection and device_selection.startswith("GPU"):
+            options['device'] = 'cuda'
+        else:
+            options['device'] = 'cpu'
+
         return (mode, options)
 
     def _draw(self):
@@ -302,6 +329,7 @@ class MainMenu:
         self.screen.blit(options_label, (cx - options_label.get_width() // 2, options_y))
 
         # Draw dropdowns (in reverse order so expanded ones overlay correctly)
+        self.device_dropdown.draw(self.screen)
         self.replay_dropdown.draw(self.screen)
         self.model_dropdown.draw(self.screen)
 

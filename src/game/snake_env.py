@@ -1,6 +1,6 @@
 """
 Snake Environment - Gym-like wrapper for RL training.
-Provides state encoding suitable for neural network input.
+Provides 11-dimensional state encoding suitable for neural network input.
 """
 import numpy as np
 from typing import Tuple, Dict, Any, List
@@ -15,26 +15,34 @@ class SnakeEnv:
     - reset() -> initial state
     - step(action) -> (next_state, reward, done, info)
 
-    State is encoded as an 11-dimensional feature vector suitable
-    for neural network input.
+    State is an 11-dimensional feature vector encoding danger, direction, and food.
     """
 
-    def __init__(self, width: int = 20, height: int = 20):
+    def __init__(
+        self,
+        width: int = 20,
+        height: int = 20,
+        reward_config: Dict[str, float] = None
+    ):
         """
         Initialize the environment.
 
         Args:
             width: Grid width in cells
             height: Grid height in cells
+            reward_config: Optional reward configuration dictionary
         """
-        self.game = SnakeGame(width, height)
+        self.game = SnakeGame(width, height, reward_config=reward_config)
         self.width = width
         self.height = height
 
-        # State space: 11 features (danger + direction + food location)
-        self.state_size = 11
         # Action space: 3 actions (straight, right, left)
         self.action_size = 3
+
+    @property
+    def state_size(self) -> int:
+        """Get the state size (11 features)."""
+        return 11
 
     def reset(self, record: bool = False) -> np.ndarray:
         """
@@ -49,7 +57,7 @@ class SnakeEnv:
         self.game.reset()
         if record:
             self.game.start_recording()
-        return self._get_state_vector()
+        return self._get_state()
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         """
@@ -62,8 +70,17 @@ class SnakeEnv:
             Tuple of (next_state, reward, done, info)
         """
         _, reward, done, info = self.game.step(action)
-        state = self._get_state_vector()
+        state = self._get_state()
         return state, reward, done, info
+
+    def _get_state(self) -> np.ndarray:
+        """
+        Get 11-dimensional state vector.
+
+        Returns:
+            State as numpy array of shape (11,)
+        """
+        return self._get_state_vector()
 
     def _get_state_vector(self) -> np.ndarray:
         """

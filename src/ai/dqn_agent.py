@@ -21,6 +21,7 @@ class DQNAgent:
     - Epsilon-greedy exploration with decay
     - Experience replay for stable learning
     - Target network for stable Q-value targets
+    - Double DQN for reduced overestimation
     - Gradient clipping for stability
     """
 
@@ -35,7 +36,7 @@ class DQNAgent:
         Initialize the DQN agent.
 
         Args:
-            state_size: Dimension of state space
+            state_size: Dimension of state space (11 features)
             action_size: Number of possible actions
             device: PyTorch device to use
             config: Configuration dictionary with hyperparameters
@@ -55,6 +56,9 @@ class DQNAgent:
         self.target_update_freq = config.get("target_update_freq", 100)
         buffer_size = config.get("buffer_size", 100000)
 
+        # Double DQN reduces Q-value overestimation
+        self.use_double_dqn = config.get("use_double_dqn", True)
+
         # Networks
         self.policy_net = DQNNetwork(state_size, 256, action_size).to(self.device)
         self.target_net = DQNNetwork(state_size, 256, action_size).to(self.device)
@@ -66,7 +70,7 @@ class DQNAgent:
             self.policy_net.parameters(),
             lr=self.learning_rate
         )
-        self.criterion = nn.SmoothL1Loss()  # Huber loss
+        self.criterion = nn.SmoothL1Loss()
 
         # Replay buffer
         self.memory = ReplayBuffer(buffer_size)
@@ -80,7 +84,7 @@ class DQNAgent:
         Select action using epsilon-greedy policy.
 
         Args:
-            state: Current state
+            state: Current state (11 features)
             training: If True, use exploration; if False, use greedy policy
 
         Returns:
@@ -93,6 +97,33 @@ class DQNAgent:
             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
             q_values = self.policy_net(state_tensor)
             return q_values.argmax().item()
+
+    def select_actions_batch(self, states: np.ndarray, training: bool = True) -> np.ndarray:
+        """
+        Select actions for a batch of states (vectorized environments).
+
+        Args:
+            states: Batch of states, shape (N, ...) where N is num_envs
+            training: If True, use exploration; if False, use greedy policy
+
+        Returns:
+            Array of action indices, shape (N,)
+        """
+        num_envs = states.shape[0]
+
+        with torch.no_grad():
+            state_tensor = torch.FloatTensor(states).to(self.device)
+            q_values = self.policy_net(state_tensor)
+            greedy_actions = q_values.argmax(dim=1).cpu().numpy()
+
+        if training:
+            # Apply epsilon-greedy per environment
+            random_mask = np.random.random(num_envs) < self.epsilon
+            random_actions = np.random.randint(0, self.action_size, size=num_envs)
+            actions = np.where(random_mask, random_actions, greedy_actions)
+            return actions
+        else:
+            return greedy_actions
 
     def store_transition(
         self,
@@ -133,7 +164,14 @@ class DQNAgent:
 
         # Compute Q target: r + gamma * max_a' Q_target(s', a')
         with torch.no_grad():
-            next_q_values = self.target_net(next_states).max(1)[0]
+            if self.use_double_dqn:
+                # Double DQN: Use policy net to select action, target net to evaluate
+                # This reduces overestimation bias
+                next_actions = self.policy_net(next_states).argmax(1, keepdim=True)
+                next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
+            else:
+                # Standard DQN: Use target net for both selection and evaluation
+                next_q_values = self.target_net(next_states).max(1)[0]
             q_targets = rewards + self.gamma * next_q_values * (1 - dones)
 
         # Compute loss

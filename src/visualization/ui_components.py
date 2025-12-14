@@ -215,24 +215,26 @@ class Dropdown:
         Handle pygame event.
 
         Returns:
-            True if selection changed, False otherwise
+            True if event was consumed (clicked on dropdown), False otherwise
         """
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.header_rect.collidepoint(event.pos):
-                self.expanded = not self.expanded
-                return False
-
+            # Check if clicked on expanded dropdown items first
             if self.expanded and self.dropdown_rect.collidepoint(event.pos):
                 # Calculate clicked item
                 rel_y = event.pos[1] - self.y - self.item_height
                 item_index = self.scroll_offset + rel_y // self.item_height
                 if 0 <= item_index < len(self.items):
                     self.selected_index = item_index
-                    self.expanded = False
-                    return True
+                self.expanded = False
+                return True  # Consumed the click
+
+            if self.header_rect.collidepoint(event.pos):
+                self.expanded = not self.expanded
+                return True  # Consumed the click
 
             # Click outside - close dropdown
-            self.expanded = False
+            if self.expanded:
+                self.expanded = False
 
         elif event.type == pygame.MOUSEMOTION:
             if self.expanded and self.dropdown_rect.collidepoint(event.pos):

@@ -73,6 +73,17 @@ class LoggingConfig:
 
 
 @dataclass
+class RewardsConfig:
+    """Reward shaping configuration."""
+    food: float = 10.0
+    death: float = -10.0
+    step_penalty: float = 0.0
+    approach_food: float = 0.0
+    retreat_food: float = 0.0
+    length_bonus_factor: float = 0.0
+
+
+@dataclass
 class Config:
     """Complete application configuration."""
     game: GameConfig = field(default_factory=GameConfig)
@@ -80,6 +91,7 @@ class Config:
     device: DeviceConfig = field(default_factory=DeviceConfig)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
     replay: ReplayConfig = field(default_factory=ReplayConfig)
+    rewards: RewardsConfig = field(default_factory=RewardsConfig)
     hardware_monitor: HardwareMonitorConfig = field(default_factory=HardwareMonitorConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
@@ -156,6 +168,9 @@ def load_config(config_path: Optional[str] = None) -> Config:
 
     if 'logging' in data:
         config.logging = _dict_to_dataclass(data['logging'], LoggingConfig)
+
+    if 'rewards' in data:
+        config.rewards = _dict_to_dataclass(data['rewards'], RewardsConfig)
 
     return config
 

@@ -36,6 +36,7 @@ env/
 models/*.pth
 replays/*.json
 logs/*.log
+replay_queue.txt
 
 # Keep empty directories
 !models/.gitkeep

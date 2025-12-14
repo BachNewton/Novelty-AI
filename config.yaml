@@ -6,13 +6,14 @@ game:
   grid_height: 20
 
 # Training Hyperparameters
+# See EXPERIMENTS.md for rationale behind these values
 training:
   episodes: 10000
   batch_size: 64
   learning_rate: 0.001
   gamma: 0.99  # Discount factor
 
-  # Epsilon (exploration)
+  # Epsilon (exploration) - fast decay reaches low exploration by ~1000 episodes
   epsilon_start: 1.0
   epsilon_min: 0.01
   epsilon_decay: 0.995
@@ -21,9 +22,21 @@ training:
   buffer_size: 100000
   target_update_freq: 100
 
+  # Double DQN reduces Q-value overestimation
+  use_double_dqn: true
+
   # Checkpointing
   save_interval: 100  # Save model every N episodes
   checkpoint_dir: "models"
+
+# Reward shaping (see EXPERIMENTS.md for why most are disabled)
+rewards:
+  food: 10.0
+  death: -10.0
+  step_penalty: -0.01        # Small penalty encourages efficiency
+  approach_food: 0.0         # Disabled
+  retreat_food: 0.0          # Disabled
+  length_bonus_factor: 0.0   # Disabled
 
 # Device Settings
 device:

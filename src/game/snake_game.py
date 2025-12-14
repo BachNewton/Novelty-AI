@@ -44,16 +44,31 @@ class SnakeGame:
     hits a wall or itself.
     """
 
-    def __init__(self, width: int = 20, height: int = 20):
+    def __init__(
+        self,
+        width: int = 20,
+        height: int = 20,
+        reward_config: Optional[Dict[str, float]] = None
+    ):
         """
         Initialize the game.
 
         Args:
             width: Grid width in cells
             height: Grid height in cells
+            reward_config: Optional reward configuration dictionary
         """
         self.width = width
         self.height = height
+
+        # Reward configuration with defaults
+        reward_config = reward_config or {}
+        self.reward_food = reward_config.get("food", 10.0)
+        self.reward_death = reward_config.get("death", -10.0)
+        self.reward_step_penalty = reward_config.get("step_penalty", -0.01)
+        self.reward_approach_food = reward_config.get("approach_food", 0.0)
+        self.reward_retreat_food = reward_config.get("retreat_food", 0.0)
+        self.reward_length_bonus_factor = reward_config.get("length_bonus_factor", 0.0)
 
         # Game state (initialized in reset)
         self.direction: Direction = Direction.RIGHT
@@ -146,6 +161,10 @@ class SnakeGame:
                     self.food = point
                     return
 
+    def _manhattan_distance(self, p1: Point, p2: Point) -> int:
+        """Calculate Manhattan distance between two points."""
+        return abs(p1.x - p2.x) + abs(p1.y - p2.y)
+
     def step(self, action: int) -> Tuple[Dict[str, Any], float, bool, Dict[str, Any]]:
         """
         Execute one game step.
@@ -157,6 +176,9 @@ class SnakeGame:
             Tuple of (state, reward, done, info)
         """
         self.frame_count += 1
+
+        # Track distance to food before move (for distance-based rewards)
+        prev_distance = self._manhattan_distance(self.head, self.food)
 
         # Convert action to new direction
         # Action 0: continue straight
@@ -194,7 +216,7 @@ class SnakeGame:
 
         if self._is_collision():
             game_over = True
-            reward = -10.0
+            reward = self.reward_death
             self.game_over = True
 
             if self.recording:
@@ -205,19 +227,31 @@ class SnakeGame:
         # Check food
         if self.head == self.food:
             self.score += 1
-            reward = 10.0
+            # Base food reward + optional length bonus
+            reward = self.reward_food
+            if self.reward_length_bonus_factor > 0:
+                reward += self.reward_length_bonus_factor * len(self.snake)
             self._place_food()
         else:
             self.snake.pop()  # Remove tail
 
-        # Small negative reward for each step to encourage efficiency
-        if reward == 0:
-            reward = -0.01
+            # Distance-based rewards (only when not eating food)
+            new_distance = self._manhattan_distance(self.head, self.food)
+            if self.reward_approach_food != 0 or self.reward_retreat_food != 0:
+                if new_distance < prev_distance:
+                    reward = self.reward_approach_food  # Moving toward food
+                elif new_distance > prev_distance:
+                    reward = self.reward_retreat_food   # Moving away from food
+                else:
+                    reward = self.reward_step_penalty   # Same distance
+            else:
+                # No distance rewards, use step penalty
+                reward = self.reward_step_penalty
 
         # Timeout penalty (prevents infinite loops)
         if self.frame_count > 100 * len(self.snake):
             game_over = True
-            reward = -10.0
+            reward = self.reward_death
             self.game_over = True
 
         if self.recording:
