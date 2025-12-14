@@ -106,14 +106,33 @@ class UnifiedUI:
         menu.close()
         return result
 
+    def _show_loading_screen(self, message="Loading..."):
+        """Show a loading screen while initializing."""
+        self.screen.fill((25, 25, 35))
+        font_large = pygame.font.Font(None, 48)
+        font_small = pygame.font.Font(None, 28)
+
+        # Draw loading message
+        text = font_large.render(message, True, (220, 220, 220))
+        self.screen.blit(text, (self.window_width // 2 - text.get_width() // 2,
+                                self.window_height // 2 - 30))
+
+        hint = font_small.render("Please wait...", True, (100, 100, 100))
+        self.screen.blit(hint, (self.window_width // 2 - hint.get_width() // 2,
+                                self.window_height // 2 + 20))
+
+        pygame.display.flip()
+
     def _run_training(self, options):
         """Run training mode."""
+        # Show loading screen immediately
+        self._show_loading_screen("Initializing Training...")
+        pygame.display.set_caption("Snake AI - Training")
+
         from src.game.snake_env import SnakeEnv
         from src.ai.dqn_agent import DQNAgent
         from src.device.device_manager import DeviceManager
         from src.visualization.replay_player import ReplayManager
-
-        pygame.display.set_caption("Snake AI - Training")
 
         print("\n" + "=" * 60)
         print("Snake AI Training")

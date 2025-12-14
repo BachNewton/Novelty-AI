@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Tuple, List, Optional
 
-from .ui_components import Button, Dropdown, Toggle, BG_COLOR, TEXT_COLOR, ACCENT_COLOR
+from .ui_components import Button, Dropdown, BG_COLOR, TEXT_COLOR, ACCENT_COLOR
 
 
 class MainMenu:
@@ -101,9 +101,6 @@ class MainMenu:
         self.model_dropdown = Dropdown(0, 0, 350, models, label="Model:")
         self.replay_dropdown = Dropdown(0, 0, 350, replays, label="Replay:")
 
-        # Toggle
-        self.headless_toggle = Toggle(0, 0, "Headless Training (faster)")
-
         # Calculate initial layout
         self._recalculate_layout()
 
@@ -142,13 +139,8 @@ class MainMenu:
         self.model_dropdown.set_position(dropdown_x, dropdown_y)
         self.replay_dropdown.set_position(dropdown_x, dropdown_y + 50)
 
-        # Toggle - below dropdowns
-        toggle_x = cx - 100
-        toggle_y = dropdown_y + 120
-        self.headless_toggle.set_position(toggle_x, toggle_y)
-
-        # Quit button - bottom center
-        quit_y = h - 80
+        # Quit button - bottom center (with more space from footer)
+        quit_y = h - 120
         self.btn_quit.set_position(cx - 75, quit_y)
 
     def _get_available_models(self) -> List[str]:
@@ -243,9 +235,6 @@ class MainMenu:
                 self.model_dropdown.handle_event(event)
                 self.replay_dropdown.handle_event(event)
 
-                # Handle toggle
-                self.headless_toggle.handle_event(event)
-
             self._draw()
             self.clock.tick(60)
 
@@ -254,7 +243,7 @@ class MainMenu:
     def _build_result(self, mode: str) -> Tuple[str, Dict[str, Any]]:
         """Build result tuple with selected options."""
         options = {
-            'headless': self.headless_toggle.is_on()
+            'headless': True  # Default to headless, can toggle with H key during training
         }
 
         # Add selected model
@@ -315,9 +304,6 @@ class MainMenu:
         # Draw dropdowns (in reverse order so expanded ones overlay correctly)
         self.replay_dropdown.draw(self.screen)
         self.model_dropdown.draw(self.screen)
-
-        # Draw toggle
-        self.headless_toggle.draw(self.screen)
 
         # Footer hint
         hint = self.font_label.render(
