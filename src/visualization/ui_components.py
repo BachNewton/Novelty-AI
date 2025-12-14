@@ -7,12 +7,14 @@ import pygame
 from typing import Callable, List, Optional, Tuple
 
 
-# Colors (matching dashboard.py)
+# UI Theme Colors
 BG_COLOR = (25, 25, 35)
 PANEL_COLOR = (35, 35, 45)
 TEXT_COLOR = (220, 220, 220)
 ACCENT_COLOR = (100, 200, 100)
 WARNING_COLOR = (255, 200, 50)
+DANGER_COLOR = (255, 100, 100)
+CHART_BG = (35, 35, 45)
 HOVER_COLOR = (50, 50, 65)
 BUTTON_COLOR = (45, 45, 60)
 BUTTON_HOVER = (60, 60, 80)

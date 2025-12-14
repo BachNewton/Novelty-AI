@@ -9,7 +9,7 @@ import threading
 import queue
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -114,7 +114,7 @@ class ReplayManager:
         if exclude:
             replay_files = [f for f in replay_files if f != exclude]
 
-        if len(replay_files) <= self.max_replays:
+        if len(replay_files) < self.max_replays:
             return
 
         # Extract scores from filenames (format: replay_ep{N}_score{N}_timestamp.json)
@@ -134,8 +134,9 @@ class ReplayManager:
                 scored_files.append((float('inf'), path))
 
         # Sort by score (lowest first) and delete extras
+        # +1 because we need room for the just-saved file (which was excluded)
         scored_files.sort(key=lambda x: x[0])
-        files_to_delete = len(scored_files) - self.max_replays
+        files_to_delete = len(scored_files) - self.max_replays + 1
 
         for i in range(files_to_delete):
             score, path = scored_files[i]
@@ -179,132 +180,6 @@ class ReplayManager:
                 best_path = path
 
         return best_path
-
-
-class ReplayPlayer:
-    """
-    Plays back game replays in a separate thread.
-
-    This allows training to continue while the user watches
-    interesting games (like new high scores).
-    """
-
-    def __init__(
-        self,
-        render_callback: Callable[[Dict[str, Any]], None],
-        fps: int = 10
-    ):
-        """
-        Initialize the replay player.
-
-        Args:
-            render_callback: Function to call for each frame
-            fps: Playback speed in frames per second
-        """
-        self.render_callback = render_callback
-        self.fps = fps
-        self.frame_delay = 1.0 / fps
-
-        # Replay queue
-        self.replay_queue: queue.Queue = queue.Queue()
-
-        # Control flags
-        self.playing = False
-        self.paused = False
-        self.stop_requested = False
-
-        # Current replay info
-        self.current_replay: Optional[ReplayData] = None
-        self.current_frame_idx = 0
-
-        # Thread
-        self.thread: Optional[threading.Thread] = None
-
-    def queue_replay(self, replay: ReplayData):
-        """
-        Add a replay to the playback queue.
-
-        Args:
-            replay: ReplayData to queue
-        """
-        self.replay_queue.put(replay)
-
-    def start(self):
-        """Start the replay player thread."""
-        if self.thread is not None and self.thread.is_alive():
-            return
-
-        self.stop_requested = False
-        self.thread = threading.Thread(target=self._playback_loop, daemon=True)
-        self.thread.start()
-
-    def stop(self):
-        """Stop the replay player."""
-        self.stop_requested = True
-        if self.thread is not None:
-            self.thread.join(timeout=1.0)
-            self.thread = None
-
-    def pause(self):
-        """Pause playback."""
-        self.paused = True
-
-    def resume(self):
-        """Resume playback."""
-        self.paused = False
-
-    def skip(self):
-        """Skip the current replay."""
-        self.current_replay = None
-
-    def _playback_loop(self):
-        """Main playback loop (runs in separate thread)."""
-        while not self.stop_requested:
-            # Get next replay if needed
-            if self.current_replay is None:
-                try:
-                    self.current_replay = self.replay_queue.get(timeout=0.1)
-                    self.current_frame_idx = 0
-                    self.playing = True
-                except queue.Empty:
-                    self.playing = False
-                    continue
-
-            # Handle pause
-            if self.paused:
-                time.sleep(0.1)
-                continue
-
-            # Play current frame
-            if self.current_frame_idx < len(self.current_replay.frames):
-                frame = self.current_replay.frames[self.current_frame_idx]
-                self.render_callback(frame)
-                self.current_frame_idx += 1
-                time.sleep(self.frame_delay)
-            else:
-                # Replay finished
-                self.current_replay = None
-                self.playing = False
-
-    def is_playing(self) -> bool:
-        """Check if currently playing a replay."""
-        return self.playing
-
-    def has_queued(self) -> bool:
-        """Check if there are replays in the queue."""
-        return not self.replay_queue.empty()
-
-    def get_status(self) -> Dict[str, Any]:
-        """Get current playback status."""
-        return {
-            "playing": self.playing,
-            "paused": self.paused,
-            "queued": self.replay_queue.qsize(),
-            "current_frame": self.current_frame_idx if self.current_replay else 0,
-            "total_frames": self.current_replay.duration_frames if self.current_replay else 0,
-            "current_score": self.current_replay.score if self.current_replay else 0,
-            "current_episode": self.current_replay.episode if self.current_replay else 0,
-        }
 
 
 class ReplayWindow:

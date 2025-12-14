@@ -9,7 +9,8 @@
       "Bash(findstr:*)",
       "Bash(python:*)",
       "Bash(timeout 5 python:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(ls:*)"
     ]
   }
 }

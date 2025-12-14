@@ -13,16 +13,10 @@ from dataclasses import dataclass, field
 
 from ..game.renderer import GameRenderer
 from .hardware_monitor import HardwareMonitor
-
-
-# Colors
-BG_COLOR = (25, 25, 35)
-PANEL_COLOR = (35, 35, 45)
-TEXT_COLOR = (220, 220, 220)
-ACCENT_COLOR = (100, 200, 100)
-WARNING_COLOR = (255, 200, 50)
-DANGER_COLOR = (255, 100, 100)
-CHART_BG = (35, 35, 45)
+from .ui_components import (
+    BG_COLOR, PANEL_COLOR, TEXT_COLOR, ACCENT_COLOR,
+    WARNING_COLOR, DANGER_COLOR, CHART_BG
+)
 
 
 @dataclass
