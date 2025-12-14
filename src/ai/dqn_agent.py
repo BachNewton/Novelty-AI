@@ -27,7 +27,7 @@ class DQNAgent:
 
     def __init__(
         self,
-        state_size: int = 11,
+        state_size: int = 20,
         action_size: int = 3,
         device: Optional[torch.device] = None,
         config: Optional[Dict[str, Any]] = None
@@ -36,7 +36,7 @@ class DQNAgent:
         Initialize the DQN agent.
 
         Args:
-            state_size: Dimension of state space (11 features)
+            state_size: Dimension of state space (20 features)
             action_size: Number of possible actions
             device: PyTorch device to use
             config: Configuration dictionary with hyperparameters
@@ -84,7 +84,7 @@ class DQNAgent:
         Select action using epsilon-greedy policy.
 
         Args:
-            state: Current state (11 features)
+            state: Current state (20 features)
             training: If True, use exploration; if False, use greedy policy
 
         Returns:

@@ -8,15 +8,15 @@ game:
 # Training Hyperparameters
 # See EXPERIMENTS.md for rationale behind these values
 training:
-  episodes: 10000
+  episodes: 5000
   batch_size: 64
   learning_rate: 0.001
   gamma: 0.99  # Discount factor
 
-  # Epsilon (exploration) - fast decay reaches low exploration by ~1000 episodes
+  # Epsilon (exploration) - slower decay for enhanced state features
   epsilon_start: 1.0
-  epsilon_min: 0.01
-  epsilon_decay: 0.995
+  epsilon_min: 0.02
+  epsilon_decay: 0.998
 
   # Experience replay
   buffer_size: 100000

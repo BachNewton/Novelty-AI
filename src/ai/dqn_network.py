@@ -11,7 +11,7 @@ class DQNNetwork(nn.Module):
     Deep Q-Network with 3 hidden layers.
 
     Architecture:
-    - Input: 11 features (game state encoding)
+    - Input: 20 features (game state encoding)
     - Hidden 1: 256 neurons + ReLU + Dropout(0.1)
     - Hidden 2: 256 neurons + ReLU + Dropout(0.1)
     - Hidden 3: 128 neurons + ReLU
@@ -20,7 +20,7 @@ class DQNNetwork(nn.Module):
 
     def __init__(
         self,
-        input_size: int = 11,
+        input_size: int = 20,
         hidden_size: int = 256,
         output_size: int = 3
     ):
