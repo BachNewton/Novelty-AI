@@ -171,6 +171,16 @@ class TrainingDashboard:
         if self.show_game:
             self._recalculate_layout()
 
+    def record_episode(
+        self,
+        episode: int,
+        score: int,
+        epsilon: float,
+        loss: Optional[float] = None
+    ):
+        """Record metrics for a completed episode with the final score."""
+        self._update_metrics(episode, score, epsilon, loss)
+
     def update(
         self,
         game_state: Optional[Dict[str, Any]],
@@ -205,10 +215,6 @@ class TrainingDashboard:
         # Update performance metrics
         self.total_steps = steps
         self._update_performance(episode)
-
-        # Update metrics if episode completed
-        if episode > len(self.metrics.episodes):
-            self._update_metrics(episode, score, epsilon, loss)
 
         # In headless mode, only update UI periodically for speed
         should_render = self.show_game
@@ -273,10 +279,15 @@ class TrainingDashboard:
         elapsed = now - self.last_perf_update
 
         if elapsed >= 1.0:
-            if len(self.metrics.episodes) > 0:
-                episodes_completed = episode - (self.metrics.episodes[-1] if self.metrics.episodes else 0)
-                self.episodes_per_sec = episodes_completed / elapsed
+            # Calculate episodes completed since last update
+            current_episode_count = len(self.metrics.episodes)
+            if not hasattr(self, '_last_episode_count'):
+                self._last_episode_count = 0
+            episodes_completed = current_episode_count - self._last_episode_count
+            self.episodes_per_sec = episodes_completed / elapsed
+            self._last_episode_count = current_episode_count
 
+            # Calculate steps completed since last update
             steps_completed = self.total_steps - self.last_step_count
             self.steps_per_sec = steps_completed / elapsed
 

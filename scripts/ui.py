@@ -242,8 +242,9 @@ class UnifiedUI:
                     if not running:
                         break
 
-                    # Episode complete
+                    # Episode complete - update dashboard with final score
                     score = info["score"]
+                    dashboard.record_episode(episode, score, agent.epsilon, loss)
                     recent_scores.append(score)
                     if len(recent_scores) > 100:
                         recent_scores.pop(0)
