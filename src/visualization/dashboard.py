@@ -472,7 +472,8 @@ class TrainingDashboard:
             color=(0, 200, 100),
             avg_color=(150, 255, 150),
             label="Score",
-            show_avg=True
+            show_avg=True,
+            episodes=self.metrics.episodes
         )
 
         self._draw_line_chart(
@@ -480,7 +481,8 @@ class TrainingDashboard:
             data=self.metrics.epsilons,
             color=(0, 200, 255),
             label="Epsilon",
-            y_range=(0, 1)
+            y_range=(0, 1),
+            episodes=self.metrics.episodes
         )
 
     def _draw_line_chart(
@@ -492,7 +494,8 @@ class TrainingDashboard:
         avg_data: List = None,
         avg_color: tuple = None,
         y_range: tuple = None,
-        show_avg: bool = False
+        show_avg: bool = False,
+        episodes: List = None
     ):
         """Draw a simple line chart."""
         if len(data) < 2:
@@ -518,9 +521,11 @@ class TrainingDashboard:
             step = len(data) // max_points
             plot_data = data[::step]
             plot_avg = avg_data[::step] if avg_data else None
+            plot_episodes = episodes[::step] if episodes else None
         else:
             plot_data = data
             plot_avg = avg_data
+            plot_episodes = episodes
 
         def to_screen(i, val):
             sx = x + int(i / max(1, len(plot_data) - 1) * width)
@@ -548,6 +553,17 @@ class TrainingDashboard:
         min_surf = self.font_small.render(f"{min_val:.1f}", True, (100, 100, 100))
         self.screen.blit(max_surf, (x - max_surf.get_width() - 5, y))
         self.screen.blit(min_surf, (x - min_surf.get_width() - 5, y + height - 15))
+
+        # Draw x-axis episode labels (scale count with chart width)
+        if plot_episodes and len(plot_episodes) >= 2:
+            num_labels = max(3, min(width // 80, 15))
+            for i in range(num_labels):
+                idx = int(i * (len(plot_episodes) - 1) / (num_labels - 1))
+                ep = plot_episodes[idx]
+                sx = x + int(idx / max(1, len(plot_episodes) - 1) * width)
+                ep_text = str(ep)
+                ep_surf = self.font_small.render(ep_text, True, (100, 100, 100))
+                self.screen.blit(ep_surf, (sx - ep_surf.get_width() // 2, y + height + 2))
 
     def _draw_hardware_panel(self):
         """Draw hardware utilization panel."""
