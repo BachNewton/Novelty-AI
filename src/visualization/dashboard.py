@@ -137,13 +137,21 @@ class TrainingDashboard:
 
         # Panel regions
         self.game_rect = pygame.Rect(20, 20, self.game_size, self.game_size)
+
+        # Right panels should align with left panel height
+        right_panel_x = self.game_size + 40
+        right_panel_width = w - self.game_size - 60
+        metrics_height = 150  # Metrics panel with room for all stats
+        gap = 10
+        chart_height = self.game_size - metrics_height - gap  # Fill remaining space
+
         self.metrics_rect = pygame.Rect(
-            self.game_size + 40, 20,
-            w - self.game_size - 60, 180
+            right_panel_x, 20,
+            right_panel_width, metrics_height
         )
         self.chart_rect = pygame.Rect(
-            self.game_size + 40, 210,
-            w - self.game_size - 60, 350
+            right_panel_x, 20 + metrics_height + gap,
+            right_panel_width, chart_height
         )
         self.hardware_rect = pygame.Rect(
             20, self.game_size + 40,
