@@ -46,6 +46,24 @@ pip install torch torch-directml
 
 ## Usage
 
+### Unified UI (Recommended)
+
+```bash
+# Launch the main menu UI
+python scripts/ui.py
+```
+
+From the menu you can:
+- Start training (with option for headless mode)
+- Watch AI play (select model from dropdown)
+- Play the game yourself
+- Watch saved replays
+
+**Controls in UI:**
+- ESC: Return to main menu
+- H (during training): Toggle headless mode
+- Window is resizable
+
 ### Train the AI
 
 ```bash
@@ -86,6 +104,29 @@ python scripts/play_human.py
 - R: Restart
 - ESC: Quit
 
+### Watch Replays
+
+```bash
+# Watch all replays (best scores first)
+python scripts/watch_replays.py
+
+# List available replays
+python scripts/watch_replays.py --list
+
+# Watch specific replay
+python scripts/watch_replays.py --replay replays/replay_ep500_score42.json
+
+# Watch only the best replay
+python scripts/watch_replays.py --best
+```
+
+**Controls:**
+- SPACE: Pause/Resume
+- LEFT/RIGHT: Skip frames
+- +/-: Speed up/slow down
+- N: Next replay
+- ESC: Quit
+
 ## Configuration
 
 Edit `config.yaml` to customize training parameters:
@@ -112,14 +153,16 @@ Novelty-AI/
 ├── config.yaml              # Configuration
 ├── requirements.txt         # Dependencies
 ├── scripts/
-│   ├── train.py            # Training script
-│   ├── play.py             # Watch AI play
-│   └── play_human.py       # Human play mode
+│   ├── ui.py               # Unified UI entry point
+│   ├── train.py            # Training script (CLI)
+│   ├── play.py             # Watch AI play (CLI)
+│   ├── play_human.py       # Human play mode (CLI)
+│   └── watch_replays.py    # Replay viewer (CLI)
 ├── src/
 │   ├── game/               # Snake game
 │   ├── ai/                 # DQN agent
 │   ├── device/             # GPU detection
-│   ├── visualization/      # Dashboard & effects
+│   ├── visualization/      # Dashboard, menus & effects
 │   └── utils/              # Utilities
 ├── models/                  # Saved checkpoints
 └── replays/                 # Recorded games

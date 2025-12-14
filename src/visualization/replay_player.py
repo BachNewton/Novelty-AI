@@ -98,14 +98,21 @@ class ReplayManager:
         with open(filepath, "w") as f:
             json.dump(replay.to_dict(), f)
 
+        saved_path = str(filepath)
+
         # Clean up old replays, keeping only the best ones
-        self._cleanup_old_replays()
+        # Exclude the file we just saved so it can be played back
+        self._cleanup_old_replays(exclude=filepath)
 
-        return str(filepath)
+        return saved_path
 
-    def _cleanup_old_replays(self):
+    def _cleanup_old_replays(self, exclude: Path = None):
         """Remove lowest-scoring replays if we exceed max_replays."""
         replay_files = list(self.save_dir.glob("replay_*.json"))
+
+        # Exclude the specified file from cleanup
+        if exclude:
+            replay_files = [f for f in replay_files if f != exclude]
 
         if len(replay_files) <= self.max_replays:
             return

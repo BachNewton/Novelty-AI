@@ -52,6 +52,18 @@ def parse_args():
         default=None,
         help="Path to specific replay file"
     )
+    parser.add_argument(
+        "--title",
+        type=str,
+        default=None,
+        help="Custom window title"
+    )
+    parser.add_argument(
+        "--queue",
+        type=str,
+        default=None,
+        help="Queue file for continuous replay mode"
+    )
 
     return parser.parse_args()
 
@@ -94,7 +106,7 @@ def list_replays(replay_manager):
     print(f"Total: {len(replays)} replays")
 
 
-def play_replay(renderer, replay_data, fps, replay_num, total_replays):
+def play_replay(renderer, replay_data, fps, replay_num, total_replays, wait_at_end=False):
     """Play a single replay. Returns True to continue, False to quit."""
     clock = pygame.time.Clock()
     frame_idx = 0
@@ -104,6 +116,10 @@ def play_replay(renderer, replay_data, fps, replay_num, total_replays):
     print(f"\nPlaying replay {replay_num}/{total_replays}: "
           f"Episode {replay_data.episode}, Score {replay_data.score}")
     print("Controls: SPACE=pause, LEFT/RIGHT=skip, +/-=speed, N=next, ESC=quit")
+
+    # Clear any pending events and let pygame stabilize
+    pygame.time.wait(100)
+    pygame.event.clear()
 
     while running and frame_idx < len(replay_data.frames):
         for event in pygame.event.get():
@@ -178,14 +194,243 @@ def play_replay(renderer, replay_data, fps, replay_num, total_replays):
         frame_idx += 1
         clock.tick(fps)
 
-    # Brief pause at end
-    pygame.time.wait(1000)
-    return True
+    # Show end screen if wait_at_end is True
+    if wait_at_end:
+        info_font = pygame.font.Font(None, 36)
+        waiting = True
+        while waiting:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_ESCAPE, pygame.K_SPACE, pygame.K_RETURN):
+                        return False
+
+            # Show final frame with "Press any key" message
+            renderer.surface.fill((0, 0, 0))
+            if replay_data.frames:
+                renderer.render(replay_data.frames[-1])
+
+            # Draw completion message
+            msg = info_font.render(
+                f"Replay Complete! Score: {replay_data.score}",
+                True, (100, 255, 100)
+            )
+            renderer.surface.blit(
+                msg,
+                (renderer.window_width // 2 - msg.get_width() // 2, 10)
+            )
+
+            hint = info_font.render(
+                "Press SPACE or ESC to close",
+                True, (150, 150, 150)
+            )
+            renderer.surface.blit(
+                hint,
+                (renderer.window_width // 2 - hint.get_width() // 2,
+                 renderer.window_height - 40)
+            )
+
+            pygame.display.flip()
+            clock.tick(30)
+        return False
+    else:
+        # Brief pause at end
+        pygame.time.wait(1000)
+        return True
+
+
+def run_queue_mode(queue_file: str, config):
+    """Run in queue mode - continuously play replays from a queue file."""
+    from src.game.renderer import StandaloneRenderer
+
+    queue_path = Path(queue_file)
+    replay_manager = ReplayManager(save_dir=config.replay.save_dir)
+
+    # Initialize renderer
+    renderer = StandaloneRenderer(
+        grid_width=config.game.grid_width,
+        grid_height=config.game.grid_height,
+        cell_size=30,
+        title="High Score Replays"
+    )
+
+    clock = pygame.time.Clock()
+    fps = 15
+
+    # Clear any pending events
+    pygame.time.wait(100)
+    pygame.event.clear()
+
+    def read_next_from_queue():
+        """Read and remove the first entry from the queue file."""
+        if not queue_path.exists():
+            return None
+
+        with open(queue_path, "r") as f:
+            lines = f.readlines()
+
+        if not lines:
+            return None
+
+        # Get first entry
+        first_line = lines[0].strip()
+        if not first_line:
+            # Remove empty line and try again
+            with open(queue_path, "w") as f:
+                f.writelines(lines[1:])
+            return read_next_from_queue()
+
+        # Write remaining entries back
+        with open(queue_path, "w") as f:
+            f.writelines(lines[1:])
+
+        # Parse entry: path|score|episode
+        parts = first_line.split("|")
+        if len(parts) >= 3:
+            return {"path": parts[0], "score": int(parts[1]), "episode": int(parts[2])}
+        return None
+
+    running = True
+    replays_played = 0
+
+    while running:
+        entry = read_next_from_queue()
+
+        if entry is None:
+            # No more replays, exit
+            break
+
+        replay_path = entry["path"]
+        score = entry["score"]
+        episode = entry["episode"]
+
+        # Check if file exists
+        if not Path(replay_path).exists():
+            print(f"[Replay] File not found: {replay_path}")
+            continue
+
+        try:
+            replay_data = replay_manager.load_replay(replay_path)
+        except Exception as e:
+            print(f"[Replay] Error loading {replay_path}: {e}")
+            continue
+
+        replays_played += 1
+
+        # Update window title
+        pygame.display.set_caption(f"High Score: {score} (Episode {episode})")
+
+        # Play the replay
+        frame_idx = 0
+        while frame_idx < len(replay_data.frames):
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    break
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                        break
+                    elif event.key == pygame.K_SPACE:
+                        # Skip to next replay
+                        frame_idx = len(replay_data.frames)
+                        break
+                    elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
+                        fps = min(60, fps + 5)
+                    elif event.key == pygame.K_MINUS:
+                        fps = max(5, fps - 5)
+
+            if not running:
+                break
+
+            if frame_idx >= len(replay_data.frames):
+                break
+
+            frame = replay_data.frames[frame_idx]
+            renderer.surface.fill((0, 0, 0))
+            renderer.render(frame)
+
+            # Draw info
+            info_font = pygame.font.Font(None, 28)
+
+            title_text = info_font.render(
+                f"NEW HIGH SCORE: {score} (Episode {episode})",
+                True, (100, 255, 100)
+            )
+            renderer.surface.blit(title_text, (10, 10))
+
+            score_text = info_font.render(
+                f"Score: {frame.get('score', 0)}",
+                True, (220, 220, 220)
+            )
+            renderer.surface.blit(
+                score_text,
+                (renderer.window_width // 2 - score_text.get_width() // 2,
+                 renderer.window_height - 60)
+            )
+
+            progress_text = info_font.render(
+                f"Frame {frame_idx + 1}/{len(replay_data.frames)} | SPACE=skip, +/-=speed, ESC=close",
+                True, (100, 100, 100)
+            )
+            renderer.surface.blit(
+                progress_text,
+                (renderer.window_width // 2 - progress_text.get_width() // 2,
+                 renderer.window_height - 30)
+            )
+
+            pygame.display.flip()
+            frame_idx += 1
+            clock.tick(fps)
+
+        # Brief pause between replays
+        if running:
+            pygame.time.wait(500)
+
+    # Clean up queue file
+    if queue_path.exists():
+        queue_path.unlink()
+
+    renderer.close()
+    print(f"[Replay] Played {replays_played} replay(s)")
 
 
 def main():
     """Main entry point."""
+    import traceback
+
     args = parse_args()
+
+    # Queue mode for high score replays
+    if args.queue:
+        try:
+            config = load_config()
+            run_queue_mode(args.queue, config)
+        except Exception as e:
+            log_path = Path(__file__).parent.parent / "replay_error.log"
+            with open(log_path, "w") as f:
+                f.write(f"Error in queue mode: {e}\n")
+                f.write(traceback.format_exc())
+        return
+
+    # If launched with --title (high score popup), log errors to file since no console
+    if args.title:
+        try:
+            _main_impl(args)
+        except Exception as e:
+            # Log error to file for debugging
+            log_path = Path(__file__).parent.parent / "replay_error.log"
+            with open(log_path, "w") as f:
+                f.write(f"Error: {e}\n")
+                f.write(traceback.format_exc())
+            raise
+    else:
+        _main_impl(args)
+
+
+def _main_impl(args):
+    """Actual main implementation."""
     config = load_config()
 
     replay_manager = ReplayManager(save_dir=config.replay.save_dir)
@@ -197,6 +442,16 @@ def main():
 
     # Get replays to play
     if args.replay:
+        # Verify the replay file exists
+        replay_path = Path(args.replay)
+        if not replay_path.exists():
+            print(f"Error: Replay file not found: {args.replay}")
+            # Log for debugging when no console
+            if args.title:
+                log_path = Path(__file__).parent.parent / "replay_error.log"
+                with open(log_path, "w") as f:
+                    f.write(f"Replay file not found: {args.replay}\n")
+            return
         replay_files = [args.replay]
     elif args.best:
         best = replay_manager.get_best_replay()
@@ -230,11 +485,12 @@ def main():
         return
 
     # Initialize renderer
+    window_title = args.title if args.title else "Snake AI - Replay Viewer"
     renderer = StandaloneRenderer(
         grid_width=config.game.grid_width,
         grid_height=config.game.grid_height,
         cell_size=30,
-        title="Snake AI - Replay Viewer"
+        title=window_title
     )
 
     print("\n" + "=" * 50)
@@ -251,11 +507,14 @@ def main():
 
     fps = args.speed
 
+    # If single replay with custom title (high score popup), wait at end
+    wait_at_end = args.title is not None and len(replay_files) == 1
+
     # Play each replay
     for i, filepath in enumerate(replay_files, 1):
         try:
             replay_data = replay_manager.load_replay(filepath)
-            if not play_replay(renderer, replay_data, fps, i, len(replay_files)):
+            if not play_replay(renderer, replay_data, fps, i, len(replay_files), wait_at_end):
                 break
         except Exception as e:
             print(f"Error loading replay: {e}")

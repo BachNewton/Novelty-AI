@@ -6,7 +6,10 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:pypi.org)",
       "Bash(dir:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(python:*)",
+      "Bash(timeout 5 python:*)",
+      "Bash(cat:*)"
     ]
   }
 }
