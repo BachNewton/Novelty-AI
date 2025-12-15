@@ -12,10 +12,25 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..game.snake_env import SnakeEnv
-from ..game.vec_env import VectorizedSnakeEnv
-from ..ai.dqn_agent import DQNAgent
+# New structure imports
+from ..games.registry import GameRegistry
+from ..algorithms.registry import AlgorithmRegistry
+from .vec_env import VectorizedEnv
 from ..visualization.replay_player import ReplayManager
+
+# Backwards compatibility
+try:
+    from ..games.snake.env import SnakeEnv
+except ImportError:
+    from ..game.snake_env import SnakeEnv
+
+try:
+    from ..algorithms.dqn.agent import DQNAgent
+except ImportError:
+    from ..ai.dqn_agent import DQNAgent
+
+# Alias for backwards compatibility
+VectorizedSnakeEnv = VectorizedEnv
 
 
 def get_default_num_envs() -> int:

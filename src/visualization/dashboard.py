@@ -11,12 +11,18 @@ from collections import deque
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
-from ..game.renderer import GameRenderer
 from .hardware_monitor import HardwareMonitor
 from .ui_components import (
     BG_COLOR, PANEL_COLOR, TEXT_COLOR, ACCENT_COLOR,
-    WARNING_COLOR, DANGER_COLOR, CHART_BG
+    WARNING_COLOR, DANGER_COLOR, CHART_BG, SUCCESS_COLOR
 )
+from ..core.renderer_interface import RendererInterface
+
+# Backwards compatibility import
+try:
+    from ..games.snake.renderer import SnakeRenderer as GameRenderer
+except ImportError:
+    from ..game.renderer import GameRenderer
 
 
 @dataclass
@@ -92,7 +98,7 @@ class TrainingDashboard:
                 (self.window_width, self.window_height),
                 pygame.RESIZABLE
             )
-            pygame.display.set_caption("Snake AI - Training Dashboard")
+            pygame.display.set_caption("Novelty AI - Training Dashboard")
         else:
             self.screen = screen
             self.window_width = screen.get_width()

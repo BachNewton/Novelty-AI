@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-Training Script - Main entry point for training the Snake AI.
+Novelty AI - Training Script
+
+Train AI on any registered game via command line.
 
 Usage:
-    python scripts/train.py                    # Train with visualization
-    python scripts/train.py --headless         # Train without visualization (faster)
-    python scripts/train.py --episodes 5000    # Custom episode count
+    python scripts/train.py --game snake              # Train Snake with visualization
+    python scripts/train.py --game snake --headless   # Headless (faster, for servers)
+    python scripts/train.py --game snake --episodes 5000 --load models/snake/checkpoint.pth
+    python scripts/train.py --game snake --json       # Machine-readable output
 """
 import sys
+import json
 import argparse
 import ctypes
 from pathlib import Path
@@ -18,8 +22,9 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.device.device_manager import DeviceManager
-from src.utils.config_loader import load_config
+from src.utils.config_loader import load_game_config
 from src.training import Trainer, TrainingConfig, get_default_num_envs
+from src.games.registry import GameRegistry
 
 
 @contextmanager
@@ -32,17 +37,32 @@ def prevent_sleep():
         ctypes.windll.kernel32.SetThreadExecutionState(
             ES_CONTINUOUS | ES_SYSTEM_REQUIRED
         )
-        print("[System] Sleep prevention enabled")
         yield
     finally:
         ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
-        print("[System] Sleep prevention disabled")
 
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Train Snake AI")
+    parser = argparse.ArgumentParser(
+        description="Novelty AI - Train AI on games",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python scripts/train.py --game snake              # Train with visualization
+  python scripts/train.py --game snake --headless   # Headless (faster)
+  python scripts/train.py --game snake --episodes 5000
+  python scripts/train.py --game snake --json       # Machine-readable output
+"""
+    )
 
+    parser.add_argument(
+        "-g", "--game",
+        type=str,
+        required=True,
+        metavar="GAME_ID",
+        help="Game to train on (e.g., 'snake')"
+    )
     parser.add_argument(
         "--headless",
         action="store_true",
@@ -53,12 +73,6 @@ def parse_args():
         type=int,
         default=None,
         help="Number of episodes to train"
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Path to config file"
     )
     parser.add_argument(
         "--cpu",
@@ -75,7 +89,17 @@ def parse_args():
         "--num-envs",
         type=int,
         default=None,
-        help="Number of parallel environments (default: auto-detect based on CPU cores)"
+        help="Number of parallel environments (default: auto-detect)"
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results in JSON format (for automation)"
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Minimal output (only errors and final results)"
     )
 
     args = parser.parse_args()
@@ -87,13 +111,22 @@ def parse_args():
     return args
 
 
-def train_headless(config, device_manager, load_path: str = None, num_envs: int = 1):
+def validate_game(game_id: str) -> bool:
+    """Check if game is registered."""
+    available = GameRegistry.list_games()
+    available_ids = [g.id for g in available if hasattr(g, 'id')]
+    return game_id in available_ids
+
+
+def train_headless(config, device_manager, game_id: str, load_path: str = None,
+                   num_envs: int = 1, quiet: bool = False):
     """Train without visualization (maximum speed)."""
     from src.visualization.replay_player import ReplayWindow
 
-    print("\n[Training] Starting headless training...")
-    print("[Training] Replays will open in a separate window when new high scores are achieved")
-    print("[Training] Press Ctrl+C to stop training\n")
+    if not quiet:
+        print("\n[Training] Starting headless training...")
+        print("[Training] Replays will open in separate window on new high scores")
+        print("[Training] Press Ctrl+C to stop training\n")
 
     # Initialize replay window for high score playback
     replay_window = ReplayWindow(
@@ -113,10 +146,11 @@ def train_headless(config, device_manager, load_path: str = None, num_envs: int 
                 frames=replay_data.frames,
                 score=score,
                 episode=episode,
-                save=False  # Already saved by trainer
+                save=False
             )
         except Exception as e:
-            print(f"[Replay] Error loading replay: {e}")
+            if not quiet:
+                print(f"[Replay] Error loading replay: {e}")
 
     trainer = Trainer(
         config=config,
@@ -130,23 +164,30 @@ def train_headless(config, device_manager, load_path: str = None, num_envs: int 
     try:
         high_score = trainer.train()
     except KeyboardInterrupt:
-        print("\n[Training] Interrupted by user")
+        if not quiet:
+            print("\n[Training] Interrupted by user")
         high_score = trainer.high_score
     finally:
-        trainer.save_final_model()
+        final_path = trainer.save_final_model()
         trainer.close()
         replay_window.stop()
 
-    print(f"\n[Training] Complete! High score: {high_score}")
+    return {
+        "high_score": high_score,
+        "model_path": final_path,
+        "episodes_completed": trainer.step_count // num_envs if hasattr(trainer, 'step_count') else 0
+    }
 
 
-def train_with_visualization(config, device_manager, load_path: str = None, num_envs: int = 1):
+def train_with_visualization(config, device_manager, game_id: str, load_path: str = None,
+                              num_envs: int = 1, quiet: bool = False):
     """Train with real-time visualization dashboard."""
     from src.visualization.dashboard import TrainingDashboard
 
-    print("\n[Training] Starting training with visualization...")
-    print("[Training] Close the window or press ESC to stop")
-    print("[Training] Press H to toggle headless mode\n")
+    if not quiet:
+        print("\n[Training] Starting training with visualization...")
+        print("[Training] Close the window or press ESC to stop")
+        print("[Training] Press H to toggle headless mode\n")
 
     # Initialize dashboard
     dashboard = TrainingDashboard(
@@ -164,28 +205,44 @@ def train_with_visualization(config, device_manager, load_path: str = None, num_
         device=device_manager.get_device(),
         num_envs=num_envs,
         dashboard=dashboard,
-        on_high_score=None,  # Dashboard handles high score display
+        on_high_score=None,
         load_path=load_path,
     )
 
     try:
         high_score = trainer.train(render_fps=30)
     except KeyboardInterrupt:
-        print("\n[Training] Interrupted by user")
+        if not quiet:
+            print("\n[Training] Interrupted by user")
         high_score = trainer.high_score
     finally:
-        trainer.save_final_model()
+        final_path = trainer.save_final_model()
         trainer.close()
 
-    print(f"\n[Training] Complete! High score: {high_score}")
+    return {
+        "high_score": high_score,
+        "model_path": final_path,
+        "episodes_completed": trainer.step_count // num_envs if hasattr(trainer, 'step_count') else 0
+    }
 
 
 def main():
     """Main entry point."""
     args = parse_args()
 
-    # Load configuration
-    raw_config = load_config(args.config)
+    # Validate game
+    if not validate_game(args.game):
+        available = GameRegistry.list_games()
+        available_ids = [g.id for g in available if hasattr(g, 'id')]
+        if args.json:
+            print(json.dumps({"error": f"Unknown game '{args.game}'", "available": available_ids}))
+        else:
+            print(f"Error: Unknown game '{args.game}'")
+            print(f"Available games: {', '.join(available_ids)}")
+        sys.exit(1)
+
+    # Load game-specific configuration
+    raw_config = load_game_config(args.game)
 
     # Override config with command line args
     if args.episodes:
@@ -193,6 +250,14 @@ def main():
 
     # Create training config from loaded config
     config = TrainingConfig.from_config(raw_config)
+
+    # Update paths for game-specific directories
+    config.checkpoint_dir = f"models/{args.game}"
+    config.replay_dir = f"replays/{args.game}"
+
+    # Create directories
+    Path(config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+    Path(config.replay_dir).mkdir(parents=True, exist_ok=True)
 
     # Initialize device manager
     preferred = None
@@ -204,21 +269,41 @@ def main():
         force_cpu=args.cpu or raw_config.device.force_cpu
     )
 
-    print("=" * 60)
-    print("Snake AI Training")
-    print("=" * 60)
-    device_manager.print_device_info()
-    print(f"Episodes: {config.episodes}")
-    print(f"Visualization: {'Disabled' if args.headless else 'Enabled'}")
-    print(f"Parallel environments: {args.num_envs}")
-    print("=" * 60)
+    # Get game metadata
+    metadata = GameRegistry.get_metadata(args.game)
+    game_name = metadata.name if metadata else args.game.title()
+
+    if not args.quiet and not args.json:
+        print("=" * 60)
+        print(f"Novelty AI - {game_name} Training")
+        print("=" * 60)
+        device_manager.print_device_info()
+        print(f"Episodes: {config.episodes}")
+        print(f"Visualization: {'Disabled' if args.headless else 'Enabled'}")
+        print(f"Parallel environments: {args.num_envs}")
+        print("=" * 60)
 
     # Start training
     with prevent_sleep():
         if args.headless:
-            train_headless(config, device_manager, load_path=args.load, num_envs=args.num_envs)
+            result = train_headless(
+                config, device_manager, args.game,
+                load_path=args.load, num_envs=args.num_envs, quiet=args.quiet
+            )
         else:
-            train_with_visualization(config, device_manager, load_path=args.load, num_envs=args.num_envs)
+            result = train_with_visualization(
+                config, device_manager, args.game,
+                load_path=args.load, num_envs=args.num_envs, quiet=args.quiet
+            )
+
+    # Output results
+    if args.json:
+        result["game"] = args.game
+        result["success"] = True
+        print(json.dumps(result))
+    elif not args.quiet:
+        print(f"\n[Training] Complete! High score: {result['high_score']}")
+        print(f"[Training] Model saved to: {result['model_path']}")
 
 
 if __name__ == "__main__":

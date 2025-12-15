@@ -12,7 +12,9 @@
       "Bash(cat:*)",
       "Bash(ls:*)",
       "Bash(timeout 10 python:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)"
     ]
   }
 }

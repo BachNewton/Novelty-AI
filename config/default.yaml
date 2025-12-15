@@ -1,0 +1,30 @@
+# Novelty AI - Default Configuration
+# These settings apply to all games unless overridden
+
+# Device Settings
+device:
+  # Options: "auto", "cuda", "directml", "cpu"
+  preferred: "auto"
+  force_cpu: false
+
+# Visualization Settings
+visualization:
+  enabled: true
+  show_game: true
+  show_charts: true
+  render_fps: 30
+  chart_update_interval: 25  # Update charts every N episodes
+
+  # Dashboard window
+  window_width: 1400
+  window_height: 900
+
+# Hardware Monitor Settings
+hardware_monitor:
+  enabled: true
+  update_interval: 1.0  # seconds
+
+# Logging
+logging:
+  level: "INFO"
+  log_file: "logs/training.log"

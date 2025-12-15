@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """
-Unified UI Entry Point - Main menu for all Snake AI modes.
+Novelty AI - Unified UI Entry Point
 
-Provides a graphical interface to access:
-- Training (with headless toggle via H key)
-- Watch AI Play
-- Play as Human
-- Watch Replays
+Provides a graphical interface to access the AI Training Hub:
+- Game Hub for selecting games
+- Per-game menus for Training, Watch AI, Play Human, Replays
 
 All modes share a single window - no window closing/reopening.
 
 Usage:
-    python scripts/ui.py
+    python scripts/ui.py              # Opens Game Hub
+    python scripts/ui.py --game snake # Goes directly to Snake menu
+    python scripts/ui.py -g snake     # Short form
 """
 import sys
 import os
 import ctypes
 import warnings
 import subprocess
+import argparse
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -31,10 +32,12 @@ warnings.filterwarnings('ignore', category=UserWarning, module='pygame')
 
 import pygame
 
-from src.utils.config_loader import load_config
-from src.visualization.main_menu import MainMenu
+from src.utils.config_loader import load_config, load_game_config
+from src.visualization.game_hub import GameHub
+from src.visualization.game_menu import GameMenu
 from src.visualization.dashboard import TrainingDashboard
 from src.training import Trainer, TrainingConfig, get_default_num_envs
+from src.games.registry import GameRegistry
 
 
 @contextmanager
@@ -55,14 +58,23 @@ def prevent_sleep():
 class UnifiedUI:
     """
     Unified UI that maintains a single window throughout all modes.
+    Supports both Game Hub (multi-game selection) and direct game access.
     """
 
     MIN_WIDTH = 800
     MIN_HEIGHT = 600
 
-    def __init__(self, config):
+    def __init__(self, config, initial_game: str = None):
+        """
+        Initialize the UI.
+
+        Args:
+            config: Default configuration
+            initial_game: If specified, skip hub and go directly to this game
+        """
         self.config = config
-        self.training_config = TrainingConfig.from_config(config)
+        self.initial_game = initial_game
+        self.current_game = initial_game
 
         # Initialize pygame and create the main window
         pygame.init()
@@ -72,28 +84,83 @@ class UnifiedUI:
             (self.window_width, self.window_height),
             pygame.RESIZABLE
         )
-        pygame.display.set_caption("Snake AI")
+        pygame.display.set_caption("Novelty AI")
 
         self.running = True
 
     def run(self):
-        """Main loop - show menu and run selected modes."""
+        """Main loop - show hub/menu and run selected modes."""
         while self.running:
-            # Show menu
-            mode, options = self._run_menu()
-
-            if mode == 'quit':
-                break
-            elif mode == 'training':
-                self._run_training(options)
-            elif mode == 'play':
-                self._run_play(options)
-            elif mode == 'human':
-                self._run_human()
-            elif mode == 'replays':
-                self._run_replays(options)
+            # If we have a game selected, show game menu
+            # Otherwise show the game hub
+            if self.current_game:
+                result = self._run_game_menu(self.current_game)
+                if result == 'back':
+                    # Go back to hub (unless we started with --game)
+                    if self.initial_game:
+                        break  # Exit if started with --game
+                    self.current_game = None
+                elif result == 'quit':
+                    break
+            else:
+                # Show game hub
+                action = self._run_game_hub()
+                if action == 'quit':
+                    break
+                elif action == 'settings':
+                    # Settings not implemented yet - just continue
+                    print("[Settings] Not yet implemented")
+                    continue
+                elif action:
+                    self.current_game = action
 
         pygame.quit()
+
+    def _run_game_hub(self):
+        """Run the game hub for game selection."""
+        pygame.display.set_caption("Novelty AI - Game Hub")
+
+        hub = GameHub(screen=self.screen)
+        result, options = hub.run()  # Unpack tuple
+        hub.close()
+
+        return result  # Return just the action/game_id
+
+    def _run_game_menu(self, game_id: str):
+        """Run the game-specific menu."""
+        # Load game-specific config
+        game_config = load_game_config(game_id)
+        self.training_config = TrainingConfig.from_config(game_config)
+
+        # Get game metadata
+        metadata = GameRegistry.get_metadata(game_id)
+        game_name = metadata.name if metadata else game_id.title()
+
+        pygame.display.set_caption(f"Novelty AI - {game_name}")
+
+        menu = GameMenu(
+            screen=self.screen,
+            game_id=game_id,
+            models_dir="models",
+            replays_dir="replays"
+        )
+        mode, options = menu.run()
+        menu.close()
+
+        if mode == 'quit':
+            return 'quit'
+        elif mode == 'back':
+            return 'back'
+        elif mode == 'training':
+            self._run_training(options, game_id, game_config)
+        elif mode == 'play':
+            self._run_play(options, game_id, game_config)
+        elif mode == 'human':
+            self._run_human(game_id, game_config)
+        elif mode == 'replays':
+            self._run_replays(options, game_id, game_config)
+
+        return 'continue'
 
     def _handle_resize(self, event):
         """Handle window resize event."""
@@ -104,20 +171,9 @@ class UnifiedUI:
             pygame.RESIZABLE
         )
 
-    def _run_menu(self):
-        """Run the main menu."""
-        menu = MainMenu(
-            screen=self.screen,
-            models_dir=self.config.training.checkpoint_dir,
-            replays_dir=self.config.replay.save_dir
-        )
-        result = menu.run()
-        menu.close()
-        return result
-
     def _show_loading_screen(self, message="Loading..."):
         """Show a loading screen while initializing."""
-        self.screen.fill((25, 25, 35))
+        self.screen.fill((40, 44, 52))  # Novelty AI background
         font_large = pygame.font.Font(None, 48)
         font_small = pygame.font.Font(None, 28)
 
@@ -132,15 +188,18 @@ class UnifiedUI:
 
         pygame.display.flip()
 
-    def _run_training(self, options):
+    def _run_training(self, options, game_id: str, game_config):
         """Run training mode using shared Trainer."""
-        self._show_loading_screen("Initializing Training...")
-        pygame.display.set_caption("Snake AI - Training")
+        metadata = GameRegistry.get_metadata(game_id)
+        game_name = metadata.name if metadata else game_id.title()
+
+        self._show_loading_screen(f"Initializing {game_name} Training...")
+        pygame.display.set_caption(f"Novelty AI - {game_name} Training")
 
         from src.device.device_manager import DeviceManager
 
         print("\n" + "=" * 60)
-        print("Snake AI Training")
+        print(f"Novelty AI - {game_name} Training")
         print("=" * 60)
 
         # Use device selection from menu (defaults to GPU if available)
@@ -160,11 +219,11 @@ class UnifiedUI:
         # Initialize dashboard with the shared screen
         dashboard = TrainingDashboard(
             screen=self.screen,
-            grid_width=self.config.game.grid_width,
-            grid_height=self.config.game.grid_height,
-            chart_update_interval=self.config.visualization.chart_update_interval,
+            grid_width=game_config.game.grid_width,
+            grid_height=game_config.game.grid_height,
+            chart_update_interval=game_config.visualization.chart_update_interval,
             show_game=show_game,
-            total_episodes=self.config.training.episodes,
+            total_episodes=game_config.training.episodes,
             num_envs=num_envs,
         )
 
@@ -185,7 +244,7 @@ class UnifiedUI:
 
         try:
             with prevent_sleep():
-                high_score = trainer.train(render_fps=self.config.visualization.render_fps)
+                high_score = trainer.train(render_fps=game_config.visualization.render_fps)
         except KeyboardInterrupt:
             print("\n[Training] Interrupted by user")
             high_score = trainer.high_score
@@ -194,20 +253,22 @@ class UnifiedUI:
             trainer.close()
 
         print(f"\n[Training] Complete! High score: {high_score}")
-        pygame.display.set_caption("Snake AI")
+        pygame.display.set_caption("Novelty AI")
 
-    def _run_play(self, options):
+    def _run_play(self, options, game_id: str, game_config):
         """Run AI watch mode."""
-        from src.game.snake_env import SnakeEnv
-        from src.ai.dqn_agent import DQNAgent
         from src.device.device_manager import DeviceManager
-        from src.game.renderer import GameRenderer
+        from src.algorithms.dqn.agent import DQNAgent
 
-        pygame.display.set_caption("Snake AI - Watch Mode")
+        metadata = GameRegistry.get_metadata(game_id)
+        game_name = metadata.name if metadata else game_id.title()
 
+        pygame.display.set_caption(f"Novelty AI - {game_name} Watch Mode")
+
+        # Find model
         model_path = options.get('model')
+        models_dir = Path(f"models/{game_id}")
         if not model_path or not Path(model_path).exists():
-            models_dir = Path(self.config.training.checkpoint_dir)
             final = models_dir / "final_model.pth"
             if final.exists():
                 model_path = str(final)
@@ -226,10 +287,9 @@ class UnifiedUI:
         # Use device selection from menu
         force_cpu = options.get('device', 'cuda') == 'cpu'
         device_manager = DeviceManager(force_cpu=force_cpu)
-        env = SnakeEnv(
-            self.config.game.grid_width,
-            self.config.game.grid_height
-        )
+
+        # Create environment using registry
+        env = GameRegistry.create_env(game_id, width=game_config.game.grid_width, height=game_config.game.grid_height)
 
         agent = DQNAgent(
             state_size=env.state_size,
@@ -239,21 +299,21 @@ class UnifiedUI:
         agent.load(model_path)
         agent.epsilon = 0
 
+        # Create renderer using registry
+        renderer = GameRegistry.create_renderer(game_id)
+        renderer.set_surface(self.screen)
+
         # Calculate cell size for centered game
         cell_size = min(
-            (self.window_width - 40) // self.config.game.grid_width,
-            (self.window_height - 100) // self.config.game.grid_height
+            (self.window_width - 40) // game_config.game.grid_width,
+            (self.window_height - 100) // game_config.game.grid_height
         )
-        game_width = cell_size * self.config.game.grid_width
-        game_height = cell_size * self.config.game.grid_height
+        game_width = cell_size * game_config.game.grid_width
+        game_height = cell_size * game_config.game.grid_height
         offset_x = (self.window_width - game_width) // 2
         offset_y = (self.window_height - game_height - 60) // 2
-
-        renderer = GameRenderer(
-            cell_size=cell_size,
-            surface=self.screen,
-            offset=(offset_x, offset_y)
-        )
+        renderer.cell_size = cell_size
+        renderer.offset = (offset_x, offset_y)
 
         print("\nControls: SPACE=pause, +/-=speed, R=restart, ESC=menu\n")
 
@@ -267,6 +327,9 @@ class UnifiedUI:
         font = pygame.font.Font(None, 32)
         state = env.reset()
 
+        grid_w = game_config.game.grid_width
+        grid_h = game_config.game.grid_height
+
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -276,14 +339,16 @@ class UnifiedUI:
                     self._handle_resize(event)
                     # Recalculate layout
                     cell_size = min(
-                        (self.window_width - 40) // self.config.game.grid_width,
-                        (self.window_height - 100) // self.config.game.grid_height
+                        (self.window_width - 40) // grid_w,
+                        (self.window_height - 100) // grid_h
                     )
-                    game_width = cell_size * self.config.game.grid_width
-                    game_height = cell_size * self.config.game.grid_height
+                    game_width = cell_size * grid_w
+                    game_height = cell_size * grid_h
                     offset_x = (self.window_width - game_width) // 2
                     offset_y = (self.window_height - game_height - 60) // 2
-                    renderer = GameRenderer(cell_size=cell_size, surface=self.screen, offset=(offset_x, offset_y))
+                    renderer.set_surface(self.screen)
+                    renderer.cell_size = cell_size
+                    renderer.offset = (offset_x, offset_y)
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
@@ -304,7 +369,7 @@ class UnifiedUI:
             next_state, reward, done, info = env.step(action)
             state = next_state
 
-            self.screen.fill((25, 25, 35))
+            self.screen.fill((40, 44, 52))  # Use Novelty AI background
             game_state = env.get_game_state()
             renderer.render(game_state)
 
@@ -334,27 +399,40 @@ class UnifiedUI:
 
             clock.tick(fps)
 
-        pygame.display.set_caption("Snake AI")
+        pygame.display.set_caption("Novelty AI")
 
-    def _run_human(self):
+    def _run_human(self, game_id: str, game_config):
         """Run human play mode."""
-        from src.game.snake_game import SnakeGame, Direction
-        from src.game.renderer import GameRenderer
+        # Currently Snake-specific - future games can add their own human play logic
+        from src.games.snake.game import SnakeGame, Direction
 
-        pygame.display.set_caption("Snake Game - Human Mode")
+        metadata = GameRegistry.get_metadata(game_id)
+        game_name = metadata.name if metadata else game_id.title()
 
-        game = SnakeGame(self.config.game.grid_width, self.config.game.grid_height)
+        if not metadata or not metadata.supports_human:
+            self._show_error(f"{game_name} doesn't support human play mode.")
+            return
+
+        pygame.display.set_caption(f"Novelty AI - {game_name} Human Mode")
+
+        grid_w = game_config.game.grid_width
+        grid_h = game_config.game.grid_height
+        game = SnakeGame(grid_w, grid_h)
+
+        # Create renderer using registry
+        renderer = GameRegistry.create_renderer(game_id)
+        renderer.set_surface(self.screen)
 
         cell_size = min(
-            (self.window_width - 40) // self.config.game.grid_width,
-            (self.window_height - 100) // self.config.game.grid_height
+            (self.window_width - 40) // grid_w,
+            (self.window_height - 100) // grid_h
         )
-        game_width = cell_size * self.config.game.grid_width
-        game_height = cell_size * self.config.game.grid_height
+        game_width = cell_size * grid_w
+        game_height = cell_size * grid_h
         offset_x = (self.window_width - game_width) // 2
         offset_y = (self.window_height - game_height - 60) // 2
-
-        renderer = GameRenderer(cell_size=cell_size, surface=self.screen, offset=(offset_x, offset_y))
+        renderer.cell_size = cell_size
+        renderer.offset = (offset_x, offset_y)
 
         print("\nControls: Arrow Keys/WASD=move, R=restart, ESC=menu\n")
 
@@ -378,14 +456,16 @@ class UnifiedUI:
                 elif event.type == pygame.VIDEORESIZE:
                     self._handle_resize(event)
                     cell_size = min(
-                        (self.window_width - 40) // self.config.game.grid_width,
-                        (self.window_height - 100) // self.config.game.grid_height
+                        (self.window_width - 40) // grid_w,
+                        (self.window_height - 100) // grid_h
                     )
-                    game_width = cell_size * self.config.game.grid_width
-                    game_height = cell_size * self.config.game.grid_height
+                    game_width = cell_size * grid_w
+                    game_height = cell_size * grid_h
                     offset_x = (self.window_width - game_width) // 2
                     offset_y = (self.window_height - game_height - 60) // 2
-                    renderer = GameRenderer(cell_size=cell_size, surface=self.screen, offset=(offset_x, offset_y))
+                    renderer.set_surface(self.screen)
+                    renderer.cell_size = cell_size
+                    renderer.offset = (offset_x, offset_y)
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
@@ -418,7 +498,7 @@ class UnifiedUI:
                     else:
                         print(f"Game Over! Score: {final_score}")
 
-            self.screen.fill((25, 25, 35))
+            self.screen.fill((40, 44, 52))  # Novelty AI background
             game_state = game.get_state()
             renderer.render(game_state)
 
@@ -437,16 +517,19 @@ class UnifiedUI:
             pygame.display.flip()
             clock.tick(60)
 
-        pygame.display.set_caption("Snake AI")
+        pygame.display.set_caption("Novelty AI")
 
-    def _run_replays(self, options):
+    def _run_replays(self, options, game_id: str, game_config):
         """Run replay viewer."""
         from src.visualization.replay_player import ReplayManager
-        from src.game.renderer import GameRenderer
 
-        pygame.display.set_caption("Snake AI - Replay Viewer")
+        metadata = GameRegistry.get_metadata(game_id)
+        game_name = metadata.name if metadata else game_id.title()
 
-        replay_manager = ReplayManager(save_dir=self.config.replay.save_dir)
+        pygame.display.set_caption(f"Novelty AI - {game_name} Replay Viewer")
+
+        replays_dir = f"replays/{game_id}"
+        replay_manager = ReplayManager(save_dir=replays_dir)
 
         replay_selection = options.get('replay', 'all')
 
@@ -472,16 +555,23 @@ class UnifiedUI:
             self._show_error("No replays found. Train the AI first.")
             return
 
+        grid_w = game_config.game.grid_width
+        grid_h = game_config.game.grid_height
+
+        # Create renderer using registry
+        renderer = GameRegistry.create_renderer(game_id)
+        renderer.set_surface(self.screen)
+
         cell_size = min(
-            (self.window_width - 40) // self.config.game.grid_width,
-            (self.window_height - 100) // self.config.game.grid_height
+            (self.window_width - 40) // grid_w,
+            (self.window_height - 100) // grid_h
         )
-        game_width = cell_size * self.config.game.grid_width
-        game_height = cell_size * self.config.game.grid_height
+        game_width = cell_size * grid_w
+        game_height = cell_size * grid_h
         offset_x = (self.window_width - game_width) // 2
         offset_y = (self.window_height - game_height - 60) // 2
-
-        renderer = GameRenderer(cell_size=cell_size, surface=self.screen, offset=(offset_x, offset_y))
+        renderer.cell_size = cell_size
+        renderer.offset = (offset_x, offset_y)
 
         print(f"\nReplays to watch: {len(replay_files)}")
         print("Controls: SPACE=pause, LEFT/RIGHT=skip, +/-=speed, N=next, ESC=menu\n")
@@ -511,17 +601,19 @@ class UnifiedUI:
                     elif event.type == pygame.VIDEORESIZE:
                         self._handle_resize(event)
                         cell_size = min(
-                            (self.window_width - 40) // self.config.game.grid_width,
-                            (self.window_height - 100) // self.config.game.grid_height
+                            (self.window_width - 40) // grid_w,
+                            (self.window_height - 100) // grid_h
                         )
-                        game_width = cell_size * self.config.game.grid_width
-                        game_height = cell_size * self.config.game.grid_height
+                        game_width = cell_size * grid_w
+                        game_height = cell_size * grid_h
                         offset_x = (self.window_width - game_width) // 2
                         offset_y = (self.window_height - game_height - 60) // 2
-                        renderer = GameRenderer(cell_size=cell_size, surface=self.screen, offset=(offset_x, offset_y))
+                        renderer.set_surface(self.screen)
+                        renderer.cell_size = cell_size
+                        renderer.offset = (offset_x, offset_y)
                     elif event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_ESCAPE:
-                            pygame.display.set_caption("Snake AI")
+                            pygame.display.set_caption("Novelty AI")
                             return
                         elif event.key == pygame.K_SPACE:
                             paused = not paused
@@ -541,7 +633,7 @@ class UnifiedUI:
                     continue
 
                 frame = replay_data.frames[frame_idx]
-                self.screen.fill((25, 25, 35))
+                self.screen.fill((40, 44, 52))  # Novelty AI background
                 renderer.render(frame)
 
                 score_text = font.render(f"Score: {frame.get('score', 0)}", True, (220, 220, 220))
@@ -559,7 +651,7 @@ class UnifiedUI:
 
             pygame.time.wait(500)
 
-        pygame.display.set_caption("Snake AI")
+        pygame.display.set_caption("Novelty AI")
 
     def _play_high_score_replay(self, replay_path, score, episode):
         """Queue a high score replay. Launches viewer if not already running."""
@@ -629,7 +721,7 @@ class UnifiedUI:
                 elif event.type == pygame.KEYDOWN:
                     return
 
-            self.screen.fill((25, 25, 35))
+            self.screen.fill((40, 44, 52))  # Novelty AI background
             text = font.render(message, True, (255, 100, 100))
             self.screen.blit(text, (self.window_width // 2 - text.get_width() // 2, self.window_height // 2))
 
@@ -640,15 +732,49 @@ class UnifiedUI:
             clock.tick(60)
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Novelty AI - AI Training Hub",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python scripts/ui.py              # Opens Game Hub
+  python scripts/ui.py --game snake # Goes directly to Snake menu
+  python scripts/ui.py -g snake     # Short form
+"""
+    )
+    parser.add_argument(
+        "-g", "--game",
+        type=str,
+        metavar="GAME_ID",
+        help="Go directly to a specific game menu (e.g., 'snake')"
+    )
+    return parser.parse_args()
+
+
 def main():
     """Main entry point."""
+    args = parse_args()
+
+    # Load default config
     config = load_config()
 
     print("\n" + "=" * 60)
-    print("Snake AI - Unified Interface")
+    print("Novelty AI - AI Training Hub")
     print("=" * 60)
 
-    ui = UnifiedUI(config)
+    # Validate game ID if provided
+    if args.game:
+        available = GameRegistry.list_games()
+        available_ids = [g.id for g in available if hasattr(g, 'id')]
+        if args.game not in available_ids:
+            print(f"\nError: Unknown game '{args.game}'")
+            print(f"Available games: {', '.join(available_ids)}")
+            sys.exit(1)
+        print(f"Starting with game: {args.game}")
+
+    ui = UnifiedUI(config, initial_game=args.game)
     ui.run()
 
     print("\nGoodbye!")

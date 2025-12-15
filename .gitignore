@@ -32,15 +32,17 @@ env/
 *.swp
 *.swo
 
-# Project specific
-models/*.pth
-replays/*.json
+# Project specific - per-game subdirectories
+models/**/*.pth
+replays/**/*.json
 logs/*.log
 replay_queue.txt
 
-# Keep empty directories
+# Keep directory structure
 !models/.gitkeep
+!models/*/.gitkeep
 !replays/.gitkeep
+!replays/*/.gitkeep
 !logs/.gitkeep
 
 # OS

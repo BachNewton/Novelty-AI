@@ -7,18 +7,21 @@ import pygame
 from typing import Callable, List, Optional, Tuple
 
 
-# UI Theme Colors
-BG_COLOR = (25, 25, 35)
-PANEL_COLOR = (35, 35, 45)
-TEXT_COLOR = (220, 220, 220)
-ACCENT_COLOR = (100, 200, 100)
-WARNING_COLOR = (255, 200, 50)
-DANGER_COLOR = (255, 100, 100)
-CHART_BG = (35, 35, 45)
-HOVER_COLOR = (50, 50, 65)
-BUTTON_COLOR = (45, 45, 60)
-BUTTON_HOVER = (60, 60, 80)
-BORDER_COLOR = (70, 70, 85)
+# Novelty AI Theme Colors
+BG_COLOR = (40, 44, 52)          # #282C34 - Main background
+PANEL_COLOR = (45, 49, 57)       # #2D3139 - Panel background
+TEXT_COLOR = (220, 220, 220)     # #DCDCDC - Primary text
+ACCENT_COLOR = (52, 152, 219)    # #3498db - Blue accent (primary)
+ACCENT_ORANGE = (255, 140, 0)    # #ff8c00 - Orange accent (secondary)
+WARNING_COLOR = (255, 200, 50)   # Warning/caution
+DANGER_COLOR = (255, 100, 100)   # Error/danger
+SUCCESS_COLOR = (100, 200, 100)  # Success (green)
+CHART_BG = (45, 49, 57)          # Chart background
+HOVER_COLOR = (55, 60, 70)       # Hover state
+BUTTON_COLOR = (50, 55, 65)      # Button background
+BUTTON_HOVER = (65, 70, 85)      # Button hover
+BORDER_COLOR = (75, 80, 95)      # Border color
+DISABLED_COLOR = (80, 85, 95)    # Disabled elements
 
 
 class Button:

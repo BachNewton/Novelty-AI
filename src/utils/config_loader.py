@@ -1,10 +1,17 @@
 """
 Configuration Loader - Load and validate configuration from YAML.
+
+Supports hierarchical configuration:
+- config/default.yaml - Global settings
+- config/games/{game_id}.yaml - Per-game settings
+
+Game-specific settings override defaults.
 """
 import yaml
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from dataclasses import dataclass, field
+from copy import deepcopy
 
 
 @dataclass
@@ -189,3 +196,131 @@ def save_config(config: Config, config_path: str):
 
     with open(config_path, 'w') as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+
+def _deep_merge(base: Dict, override: Dict) -> Dict:
+    """
+    Deep merge two dictionaries, with override values taking precedence.
+
+    Args:
+        base: Base dictionary
+        override: Dictionary with values to override
+
+    Returns:
+        Merged dictionary
+    """
+    result = deepcopy(base)
+
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+
+    return result
+
+
+def _find_config_dir() -> Path:
+    """Find the config directory."""
+    possible_paths = [
+        Path("config"),
+        Path(__file__).parent.parent.parent / "config",
+        Path.cwd() / "config",
+    ]
+
+    for path in possible_paths:
+        if path.exists() and path.is_dir():
+            return path
+
+    # Fallback to project root config folder
+    return Path(__file__).parent.parent.parent / "config"
+
+
+def _load_yaml_file(path: Path) -> Dict:
+    """Load a YAML file, returning empty dict if not found."""
+    if not path.exists():
+        return {}
+
+    with open(path, 'r') as f:
+        data = yaml.safe_load(f)
+
+    return data if data else {}
+
+
+def load_game_config(game_id: str) -> Config:
+    """
+    Load configuration for a specific game.
+
+    Merges default settings with game-specific settings.
+    Game settings override defaults.
+
+    Args:
+        game_id: The game identifier (e.g., "snake")
+
+    Returns:
+        Config object with merged settings
+    """
+    config_dir = _find_config_dir()
+
+    # Load default config
+    default_path = config_dir / "default.yaml"
+    default_data = _load_yaml_file(default_path)
+
+    # Load game-specific config
+    game_path = config_dir / "games" / f"{game_id}.yaml"
+    game_data = _load_yaml_file(game_path)
+
+    # Merge configs (game overrides default)
+    merged_data = _deep_merge(default_data, game_data)
+
+    if not merged_data:
+        print(f"[Config] No config found for game '{game_id}', using defaults")
+        return Config()
+
+    # Build config object from merged data
+    config = Config()
+
+    if 'game' in merged_data:
+        config.game = _dict_to_dataclass(merged_data['game'], GameConfig)
+
+    if 'training' in merged_data:
+        config.training = _dict_to_dataclass(merged_data['training'], TrainingConfig)
+
+    if 'device' in merged_data:
+        config.device = _dict_to_dataclass(merged_data['device'], DeviceConfig)
+
+    if 'visualization' in merged_data:
+        config.visualization = _dict_to_dataclass(merged_data['visualization'], VisualizationConfig)
+
+    if 'replay' in merged_data:
+        config.replay = _dict_to_dataclass(merged_data['replay'], ReplayConfig)
+
+    if 'hardware_monitor' in merged_data:
+        config.hardware_monitor = _dict_to_dataclass(merged_data['hardware_monitor'], HardwareMonitorConfig)
+
+    if 'logging' in merged_data:
+        config.logging = _dict_to_dataclass(merged_data['logging'], LoggingConfig)
+
+    if 'rewards' in merged_data:
+        config.rewards = _dict_to_dataclass(merged_data['rewards'], RewardsConfig)
+
+    return config
+
+
+def list_available_games() -> list:
+    """
+    List all games that have configuration files.
+
+    Returns:
+        List of game IDs
+    """
+    config_dir = _find_config_dir()
+    games_dir = config_dir / "games"
+
+    if not games_dir.exists():
+        return []
+
+    return [
+        p.stem for p in games_dir.glob("*.yaml")
+        if p.is_file()
+    ]
