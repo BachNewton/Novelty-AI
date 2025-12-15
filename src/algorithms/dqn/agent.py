@@ -233,7 +233,7 @@ class DQNAgent(AgentInterface):
         Args:
             filepath: Path to load checkpoint from
         """
-        checkpoint = torch.load(filepath, map_location=self.device)
+        checkpoint = torch.load(filepath, map_location=self.device, weights_only=True)
 
         self.policy_net.load_state_dict(checkpoint["policy_net_state_dict"])
         self.target_net.load_state_dict(checkpoint["target_net_state_dict"])
