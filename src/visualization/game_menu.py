@@ -32,7 +32,7 @@ class GameMenu:
     |    Model: [dropdown]                     |
     |    Device: [dropdown]                    |
     |                                          |
-    |         [← Back to Hub]                  |
+    |         [< Back to Hub]                  |
     +------------------------------------------+
     """
 
@@ -108,7 +108,7 @@ class GameMenu:
         self.btn_watch = Button(0, 0, 200, 70, "Watch AI")
         self.btn_human = Button(0, 0, 200, 70, "Play Human")
         self.btn_replays = Button(0, 0, 200, 70, "Replays")
-        self.btn_back = Button(0, 0, 200, 50, "← Back to Hub", font_size=24)
+        self.btn_back = Button(0, 0, 200, 50, "< Back to Hub", font_size=24)
 
         self.buttons = {
             'training': self.btn_training,

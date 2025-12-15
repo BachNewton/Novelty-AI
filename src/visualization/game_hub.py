@@ -119,14 +119,36 @@ class GameCard:
         name_x = self.rect.centerx - name_surf.get_width() // 2
         surface.blit(name_surf, (name_x, self.rect.bottom - 70))
 
-        # Description (truncated)
+        # Description (word-wrapped to 2 lines)
         desc = self.metadata.description
-        if len(desc) > 35:
-            desc = desc[:32] + "..."
         desc_color = TEXT_COLOR if self.available else DISABLED_COLOR
-        desc_surf = self.font_desc.render(desc, True, desc_color)
-        desc_x = self.rect.centerx - desc_surf.get_width() // 2
-        surface.blit(desc_surf, (desc_x, self.rect.bottom - 40))
+        max_chars = 28  # Characters per line
+
+        # Split into lines
+        words = desc.split()
+        lines = []
+        current_line = ""
+        for word in words:
+            test_line = f"{current_line} {word}".strip() if current_line else word
+            if len(test_line) <= max_chars:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+
+        # Only show first 2 lines
+        lines = lines[:2]
+        if len(lines) == 2 and len(self.metadata.description.split()) > len(" ".join(lines).split()):
+            lines[1] = lines[1][:max_chars-3] + "..." if len(lines[1]) > max_chars-3 else lines[1]
+
+        # Render lines
+        for i, line in enumerate(lines):
+            desc_surf = self.font_desc.render(line, True, desc_color)
+            desc_x = self.rect.centerx - desc_surf.get_width() // 2
+            surface.blit(desc_surf, (desc_x, self.rect.bottom - 45 + i * 18))
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """
