@@ -15,6 +15,7 @@ import json
 import argparse
 import statistics
 from pathlib import Path
+from typing import Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -77,7 +78,7 @@ Examples:
     return parser.parse_args()
 
 
-def find_latest_model(game_id: str) -> str:
+def find_latest_model(game_id: str) -> Optional[str]:
     """Find the latest model for a game."""
     models_dir = Path(f"models/{game_id}")
 

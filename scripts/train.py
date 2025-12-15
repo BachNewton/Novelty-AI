@@ -16,6 +16,7 @@ import argparse
 import ctypes
 from pathlib import Path
 from contextlib import contextmanager
+from typing import Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -118,7 +119,7 @@ def validate_game(game_id: str) -> bool:
     return game_id in available_ids
 
 
-def train_headless(config, device_manager, game_id: str, load_path: str = None,
+def train_headless(config, device_manager, game_id: str, load_path: Optional[str] = None,
                    num_envs: int = 1, quiet: bool = False):
     """Train without visualization (maximum speed)."""
     from src.visualization.replay_player import ReplayWindow
@@ -179,7 +180,7 @@ def train_headless(config, device_manager, game_id: str, load_path: str = None,
     }
 
 
-def train_with_visualization(config, device_manager, game_id: str, load_path: str = None,
+def train_with_visualization(config, device_manager, game_id: str, load_path: Optional[str] = None,
                               num_envs: int = 1, quiet: bool = False):
     """Train with real-time visualization dashboard."""
     from src.visualization.dashboard import TrainingDashboard

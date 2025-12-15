@@ -9,7 +9,7 @@ import threading
 import queue
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -106,7 +106,7 @@ class ReplayManager:
 
         return saved_path
 
-    def _cleanup_old_replays(self, exclude: Path = None):
+    def _cleanup_old_replays(self, exclude: Optional[Path] = None):
         """Remove lowest-scoring replays if we exceed max_replays."""
         replay_files = list(self.save_dir.glob("replay_*.json"))
 
@@ -118,7 +118,7 @@ class ReplayManager:
             return
 
         # Extract scores from filenames (format: replay_ep{N}_score{N}_timestamp.json)
-        scored_files = []
+        scored_files: List[Tuple[float, Path]] = []
         for path in replay_files:
             try:
                 # Parse score from filename
@@ -126,8 +126,8 @@ class ReplayManager:
                 parts = name.split("_")
                 for part in parts:
                     if part.startswith("score"):
-                        score = int(part[5:])
-                        scored_files.append((score, path))
+                        score_val = float(int(part[5:]))
+                        scored_files.append((score_val, path))
                         break
             except (ValueError, IndexError):
                 # If parsing fails, keep the file (score=infinity)

@@ -14,7 +14,8 @@
       "Bash(timeout 10 python:*)",
       "Bash(pip show:*)",
       "Bash(tree:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(wc:*)"
     ]
   }
 }

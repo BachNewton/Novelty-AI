@@ -10,7 +10,7 @@ from typing import Dict, Any, Tuple, Optional
 try:
     import pygame
 except ImportError:
-    pygame = None  # Allow import without pygame for headless environments
+    pygame = None  # type: ignore[assignment]  # Allow import without pygame for headless
 
 
 class RendererInterface(ABC):

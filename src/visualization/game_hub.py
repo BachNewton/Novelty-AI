@@ -194,7 +194,7 @@ class GameHub:
         self.btn_quit = Button(0, 0, 150, 50, "Quit", font_size=24)
 
         # Renderers for game icons
-        self._renderers = {}
+        self._renderers: Dict[str, Any] = {}
 
         # Calculate layout
         self._recalculate_layout()

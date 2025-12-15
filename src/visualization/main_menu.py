@@ -262,7 +262,7 @@ class MainMenu:
 
     def _build_result(self, mode: str) -> Tuple[str, Dict[str, Any]]:
         """Build result tuple with selected options."""
-        options = {
+        options: Dict[str, Any] = {
             'headless': True  # Default to headless, can toggle with H key during training
         }
 

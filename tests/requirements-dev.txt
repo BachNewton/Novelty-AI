@@ -1,0 +1,6 @@
+# Test dependencies for Novelty AI
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Type checking
+mypy>=1.0.0

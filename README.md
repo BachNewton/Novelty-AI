@@ -91,7 +91,28 @@ Novelty-AI/
 
 ## Development
 
-See [CLAUDE.md](CLAUDE.md) for development instructions, including:
+### Running Tests
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run with coverage
+python -m pytest tests/ -v --cov=src
+```
+
+### Type Checking
+
+This project uses type hints and mypy for static type checking:
+
+```bash
+# Check for type errors
+python -m mypy src/ scripts/
+```
+
+### More Info
+
+See [CLAUDE.md](CLAUDE.md) for detailed development instructions, including:
 - How to add new games
 - How to add new algorithms
 - AI iteration workflow

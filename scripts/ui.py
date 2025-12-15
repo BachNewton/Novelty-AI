@@ -21,6 +21,7 @@ import subprocess
 import argparse
 from pathlib import Path
 from contextlib import contextmanager
+from typing import Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -64,7 +65,7 @@ class UnifiedUI:
     MIN_WIDTH = 800
     MIN_HEIGHT = 600
 
-    def __init__(self, config, initial_game: str = None):
+    def __init__(self, config, initial_game: Optional[str] = None):
         """
         Initialize the UI.
 
@@ -301,7 +302,6 @@ class UnifiedUI:
 
         # Create renderer using registry
         renderer = GameRegistry.create_renderer(game_id)
-        renderer.set_surface(self.screen)
 
         # Calculate cell size for centered game
         cell_size = min(
@@ -312,8 +312,8 @@ class UnifiedUI:
         game_height = cell_size * game_config.game.grid_height
         offset_x = (self.window_width - game_width) // 2
         offset_y = (self.window_height - game_height - 60) // 2
-        renderer.cell_size = cell_size
-        renderer.offset = (offset_x, offset_y)
+        renderer.set_cell_size(cell_size)
+        renderer.set_render_area(offset_x, offset_y, game_width, game_height)
 
         print("\nControls: SPACE=pause, +/-=speed, R=restart, ESC=menu\n")
 
@@ -346,9 +346,8 @@ class UnifiedUI:
                     game_height = cell_size * grid_h
                     offset_x = (self.window_width - game_width) // 2
                     offset_y = (self.window_height - game_height - 60) // 2
-                    renderer.set_surface(self.screen)
-                    renderer.cell_size = cell_size
-                    renderer.offset = (offset_x, offset_y)
+                    renderer.set_cell_size(cell_size)
+                    renderer.set_render_area(offset_x, offset_y, game_width, game_height)
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
@@ -371,7 +370,7 @@ class UnifiedUI:
 
             self.screen.fill((40, 44, 52))  # Use Novelty AI background
             game_state = env.get_game_state()
-            renderer.render(game_state)
+            renderer.render(game_state, self.screen)
 
             # Draw info
             score_text = font.render(f"Score: {info['score']}", True, (220, 220, 220))
@@ -421,7 +420,6 @@ class UnifiedUI:
 
         # Create renderer using registry
         renderer = GameRegistry.create_renderer(game_id)
-        renderer.set_surface(self.screen)
 
         cell_size = min(
             (self.window_width - 40) // grid_w,
@@ -431,8 +429,8 @@ class UnifiedUI:
         game_height = cell_size * grid_h
         offset_x = (self.window_width - game_width) // 2
         offset_y = (self.window_height - game_height - 60) // 2
-        renderer.cell_size = cell_size
-        renderer.offset = (offset_x, offset_y)
+        renderer.set_cell_size(cell_size)
+        renderer.set_render_area(offset_x, offset_y, game_width, game_height)
 
         print("\nControls: Arrow Keys/WASD=move, R=restart, ESC=menu\n")
 
@@ -463,9 +461,8 @@ class UnifiedUI:
                     game_height = cell_size * grid_h
                     offset_x = (self.window_width - game_width) // 2
                     offset_y = (self.window_height - game_height - 60) // 2
-                    renderer.set_surface(self.screen)
-                    renderer.cell_size = cell_size
-                    renderer.offset = (offset_x, offset_y)
+                    renderer.set_cell_size(cell_size)
+                    renderer.set_render_area(offset_x, offset_y, game_width, game_height)
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
@@ -500,7 +497,7 @@ class UnifiedUI:
 
             self.screen.fill((40, 44, 52))  # Novelty AI background
             game_state = game.get_state()
-            renderer.render(game_state)
+            renderer.render(game_state, self.screen)
 
             score_text = font.render(f"Score: {game.score}", True, (220, 220, 220))
             self.screen.blit(score_text, (self.window_width // 2 - score_text.get_width() // 2, self.window_height - 70))
@@ -560,7 +557,6 @@ class UnifiedUI:
 
         # Create renderer using registry
         renderer = GameRegistry.create_renderer(game_id)
-        renderer.set_surface(self.screen)
 
         cell_size = min(
             (self.window_width - 40) // grid_w,
@@ -570,8 +566,8 @@ class UnifiedUI:
         game_height = cell_size * grid_h
         offset_x = (self.window_width - game_width) // 2
         offset_y = (self.window_height - game_height - 60) // 2
-        renderer.cell_size = cell_size
-        renderer.offset = (offset_x, offset_y)
+        renderer.set_cell_size(cell_size)
+        renderer.set_render_area(offset_x, offset_y, game_width, game_height)
 
         print(f"\nReplays to watch: {len(replay_files)}")
         print("Controls: SPACE=pause, LEFT/RIGHT=skip, +/-=speed, N=next, ESC=menu\n")
@@ -608,9 +604,8 @@ class UnifiedUI:
                         game_height = cell_size * grid_h
                         offset_x = (self.window_width - game_width) // 2
                         offset_y = (self.window_height - game_height - 60) // 2
-                        renderer.set_surface(self.screen)
-                        renderer.cell_size = cell_size
-                        renderer.offset = (offset_x, offset_y)
+                        renderer.set_cell_size(cell_size)
+                        renderer.set_render_area(offset_x, offset_y, game_width, game_height)
                     elif event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_ESCAPE:
                             pygame.display.set_caption("Novelty AI")
@@ -634,7 +629,7 @@ class UnifiedUI:
 
                 frame = replay_data.frames[frame_idx]
                 self.screen.fill((40, 44, 52))  # Novelty AI background
-                renderer.render(frame)
+                renderer.render(frame, self.screen)
 
                 score_text = font.render(f"Score: {frame.get('score', 0)}", True, (220, 220, 220))
                 self.screen.blit(score_text, (10, 10))

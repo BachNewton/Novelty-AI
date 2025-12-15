@@ -22,7 +22,7 @@ class VectorizedSnakeEnv:
         width: int = 20,
         height: int = 20,
         reward_config: Optional[Dict[str, float]] = None,
-        num_workers: int = None
+        num_workers: Optional[int] = None
     ):
         """
         Initialize vectorized environment.

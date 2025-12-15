@@ -22,7 +22,7 @@ from ..core.renderer_interface import RendererInterface
 try:
     from ..games.snake.renderer import SnakeRenderer as GameRenderer
 except ImportError:
-    from ..game.renderer import GameRenderer
+    from ..game.renderer import GameRenderer  # type: ignore[assignment]
 
 
 @dataclass
@@ -263,7 +263,7 @@ class TrainingDashboard:
         if not self.show_game:
             now = time.time()
             if not hasattr(self, '_last_render_time'):
-                self._last_render_time = 0
+                self._last_render_time = 0.0
             if now - self._last_render_time >= 0.1:
                 self._last_render_time = now
                 should_render = True
@@ -589,11 +589,11 @@ class TrainingDashboard:
         data: List,
         color: tuple,
         label: str,
-        avg_data: List = None,
-        avg_color: tuple = None,
-        y_range: tuple = None,
+        avg_data: Optional[List] = None,
+        avg_color: Optional[tuple] = None,
+        y_range: Optional[tuple] = None,
         show_avg: bool = False,
-        episodes: List = None
+        episodes: Optional[List] = None
     ):
         """Draw a simple line chart."""
         if len(data) < 2:
@@ -630,7 +630,7 @@ class TrainingDashboard:
             sy = y + height - int((val - min_val) / (max_val - min_val) * height)
             return (sx, max(y, min(y + height, sy)))
 
-        if show_avg and plot_avg and len(plot_avg) >= 2:
+        if show_avg and plot_avg and avg_color and len(plot_avg) >= 2:
             avg_points = [to_screen(i, v) for i, v in enumerate(plot_avg)]
             if len(avg_points) >= 2:
                 pygame.draw.lines(self.screen, avg_color, False, avg_points, 2)

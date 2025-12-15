@@ -7,7 +7,7 @@ with or without visualization, supporting parallel environments.
 import time
 import multiprocessing
 from pathlib import Path
-from typing import Optional, Callable, Any, Dict
+from typing import Optional, Callable, Any, Dict, List
 from dataclasses import dataclass
 
 import numpy as np
@@ -176,11 +176,14 @@ class Trainer:
         # Initialize environments
         reward_config = config.get_reward_config()
 
-        self.vec_env = VectorizedSnakeEnv(
+        self.vec_env = VectorizedEnv(
+            game_id='snake',  # TODO: Make configurable when more games are added
             num_envs=self.num_envs,
-            width=config.grid_width,
-            height=config.grid_height,
-            reward_config=reward_config,
+            env_config={
+                'width': config.grid_width,
+                'height': config.grid_height,
+                'reward_config': reward_config,
+            }
         )
 
         # Display environment for visualization
@@ -215,7 +218,7 @@ class Trainer:
         self.running = True
         self.step_count = 0
         self.high_score = 0
-        self.recent_scores = []
+        self.recent_scores: List[int] = []
 
     def train(self, render_fps: int = 30) -> int:
         """
@@ -291,7 +294,7 @@ class Trainer:
                             if replay_path and self.on_high_score:
                                 self.on_high_score(replay_path, score, episode_count)
 
-                    self.agent.decay_epsilon()
+                    self.agent.on_episode_end()
                     episode_rewards[i] = 0
 
                     # Reset environment with recording

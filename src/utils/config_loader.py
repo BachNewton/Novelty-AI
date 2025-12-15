@@ -7,7 +7,7 @@ Supports hierarchical configuration:
 
 Game-specific settings override defaults.
 """
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pathlib import Path
 from typing import Optional, Any, Dict
 from dataclasses import dataclass, field
@@ -109,7 +109,7 @@ def _dict_to_dataclass(data: dict, cls: type) -> Any:
         return cls()
 
     # Get the fields that the dataclass expects
-    field_names = {f.name for f in cls.__dataclass_fields__.values()}
+    field_names = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
 
     # Filter to only include valid fields
     filtered_data = {k: v for k, v in data.items() if k in field_names}

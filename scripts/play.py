@@ -14,6 +14,7 @@ import os
 import argparse
 import warnings
 from pathlib import Path
+from typing import Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -83,7 +84,7 @@ Examples:
     return parser.parse_args()
 
 
-def find_latest_model(game_id: str) -> str:
+def find_latest_model(game_id: str) -> Optional[str]:
     """Find the latest model for a game."""
     models_dir = Path(f"models/{game_id}")
 
@@ -120,7 +121,6 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
         height=config.game.grid_height
     )
     renderer = GameRegistry.create_renderer(game_id)
-    renderer.set_surface(screen)
 
     # Load agent
     agent = DQNAgent(
@@ -142,8 +142,8 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
     game_height = cell_size * grid_h
     offset_x = (width - game_width) // 2
     offset_y = (height - game_height - 60) // 2
-    renderer.cell_size = cell_size
-    renderer.offset = (offset_x, offset_y)
+    renderer.set_cell_size(cell_size)
+    renderer.set_render_area(offset_x, offset_y, game_width, game_height)
 
     running = True
     paused = False
@@ -162,14 +162,13 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
             elif event.type == pygame.VIDEORESIZE:
                 width, height = event.w, event.h
                 screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
-                renderer.set_surface(screen)
                 cell_size = min((width - 40) // grid_w, (height - 100) // grid_h)
                 game_width = cell_size * grid_w
                 game_height = cell_size * grid_h
                 offset_x = (width - game_width) // 2
                 offset_y = (height - game_height - 60) // 2
-                renderer.cell_size = cell_size
-                renderer.offset = (offset_x, offset_y)
+                renderer.set_cell_size(cell_size)
+                renderer.set_render_area(offset_x, offset_y, game_width, game_height)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
@@ -191,7 +190,7 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
 
         screen.fill((40, 44, 52))
         game_state = env.get_game_state()
-        renderer.render(game_state)
+        renderer.render(game_state, screen)
 
         score_text = font.render(f"Score: {info['score']}", True, (220, 220, 220))
         screen.blit(score_text, (width // 2 - score_text.get_width() // 2, height - 70))
@@ -249,15 +248,14 @@ def play_human(game_id: str):
     game = SnakeGame(grid_w, grid_h)
 
     renderer = GameRegistry.create_renderer(game_id)
-    renderer.set_surface(screen)
 
     cell_size = min((width - 40) // grid_w, (height - 100) // grid_h)
     game_width = cell_size * grid_w
     game_height = cell_size * grid_h
     offset_x = (width - game_width) // 2
     offset_y = (height - game_height - 60) // 2
-    renderer.cell_size = cell_size
-    renderer.offset = (offset_x, offset_y)
+    renderer.set_cell_size(cell_size)
+    renderer.set_render_area(offset_x, offset_y, game_width, game_height)
 
     print(f"\nPlaying {game_name} as human...")
     print("Controls: Arrow Keys/WASD=move, R=restart, ESC=quit\n")
@@ -281,14 +279,13 @@ def play_human(game_id: str):
             elif event.type == pygame.VIDEORESIZE:
                 width, height = event.w, event.h
                 screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
-                renderer.set_surface(screen)
                 cell_size = min((width - 40) // grid_w, (height - 100) // grid_h)
                 game_width = cell_size * grid_w
                 game_height = cell_size * grid_h
                 offset_x = (width - game_width) // 2
                 offset_y = (height - game_height - 60) // 2
-                renderer.cell_size = cell_size
-                renderer.offset = (offset_x, offset_y)
+                renderer.set_cell_size(cell_size)
+                renderer.set_render_area(offset_x, offset_y, game_width, game_height)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
@@ -323,7 +320,7 @@ def play_human(game_id: str):
 
         screen.fill((40, 44, 52))
         game_state = game.get_state()
-        renderer.render(game_state)
+        renderer.render(game_state, screen)
 
         score_text = font.render(f"Score: {game.score}", True, (220, 220, 220))
         screen.blit(score_text, (width // 2 - score_text.get_width() // 2, height - 70))

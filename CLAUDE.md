@@ -116,6 +116,114 @@ python scripts/train.py -g snake --episodes 500 --headless && \
 python scripts/evaluate.py -g snake --episodes 50 --json
 ```
 
+## Running Tests
+
+**IMPORTANT**: Always run tests after making changes to verify nothing is broken.
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run with coverage report
+python -m pytest tests/ -v --cov=src --cov-report=term-missing
+
+# Run specific test file
+python -m pytest tests/test_screens.py -v
+
+# Run tests matching a pattern
+python -m pytest tests/ -v -k "GameMenu"
+```
+
+### Test Structure
+
+```
+tests/
+├── conftest.py              # Pygame mock, shared fixtures
+├── test_ui_components.py    # Button, Dropdown, Toggle tests
+├── test_screens.py          # GameHub, GameMenu, Dashboard init tests
+├── test_ui_integration.py   # Entry points, dropdown population
+└── test_infrastructure.py   # GameRegistry, config loading
+```
+
+### What Tests Catch
+
+- Import errors (missing modules, circular imports)
+- Initialization crashes (AttributeError, TypeError, KeyError)
+- Path issues (like double paths: `models/snake/snake/`)
+- Registry issues (missing methods, wrong keys)
+- Config issues (missing files, invalid structure)
+
+### When to Write Tests vs Rely on Mypy
+
+**Mypy catches** (no test needed):
+- Calling methods that don't exist
+- Wrong number of arguments
+- Wrong argument types
+- Missing imports
+
+**Tests catch** (write a test):
+- Logic errors (wrong calculations, off-by-one)
+- Integration issues (components don't work together)
+- Runtime state issues (paths constructed incorrectly)
+- Behavior verification (does clicking X do Y?)
+
+**Rule**: If mypy would catch it at "compile time", don't write a test for it. Focus tests on runtime behavior and integration.
+
+## Type Hints and Static Type Checking
+
+This project uses type hints throughout. Type hints enable mypy to catch bugs at "compile time" instead of runtime.
+
+### Writing Type Hints
+
+**IMPORTANT**: Always add type hints when writing new code.
+
+```python
+# Function with type hints
+def calculate_reward(score: int, multiplier: float = 1.0) -> float:
+    return score * multiplier
+
+# Optional parameters use Optional or | None
+def load_model(path: str, device: Optional[str] = None) -> Model:
+    ...
+
+# Complex types
+def get_scores(episodes: List[int]) -> Dict[str, float]:
+    ...
+```
+
+### Running Mypy
+
+**IMPORTANT**: Run mypy after making code changes to catch type errors before runtime.
+
+```bash
+# Check specific file
+python -m mypy src/training/trainer.py --ignore-missing-imports
+
+# Check entire src directory
+python -m mypy src/ --ignore-missing-imports
+
+# Check scripts too
+python -m mypy src/ scripts/ --ignore-missing-imports
+```
+
+### What Mypy Catches
+
+- Calling methods that don't exist (e.g., `agent.decay_epsilon()` when method is `on_episode_end()`)
+- Missing required arguments (e.g., `renderer.render(state)` missing `surface` argument)
+- Wrong argument types
+- Attribute access on wrong types
+- Returning wrong types from functions
+
+### When to Run Mypy
+
+Run mypy:
+1. After writing new code
+2. After changing method signatures
+3. After renaming methods or attributes
+4. Before committing changes
+
+Mypy catches errors instantly that would otherwise only appear at runtime when you click through the UI.
+
 ## Planning New Features
 
 - Before implementing training improvements, review `docs/games/snake/EXPERIMENTS.md`

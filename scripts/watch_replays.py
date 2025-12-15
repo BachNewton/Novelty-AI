@@ -348,6 +348,7 @@ def run_queue_mode(queue_file: str, config):
                 break
 
             frame = replay_data.frames[frame_idx]
+            assert renderer.surface is not None  # Guaranteed after pygame init
             renderer.surface.fill((0, 0, 0))
             renderer.render(frame)
 

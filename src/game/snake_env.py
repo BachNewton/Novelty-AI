@@ -4,7 +4,7 @@ Provides 20-dimensional state encoding suitable for neural network input.
 """
 import numpy as np
 from collections import deque
-from typing import Tuple, Dict, Any, List
+from typing import Tuple, Dict, Any, List, Optional
 from .snake_game import SnakeGame, Direction, Point
 
 
@@ -24,7 +24,7 @@ class SnakeEnv:
         self,
         width: int = 20,
         height: int = 20,
-        reward_config: Dict[str, float] = None
+        reward_config: Optional[Dict[str, float]] = None
     ):
         """
         Initialize the environment.
@@ -87,7 +87,7 @@ class SnakeEnv:
         idx = clock_wise.index(direction)
         return clock_wise[(idx - 1) % 4]
 
-    def _get_next_point(self, direction: Direction, start: Point = None) -> Point:
+    def _get_next_point(self, direction: Direction, start: Optional[Point] = None) -> Point:
         """Get the next point in the given direction from start (or head)."""
         if start is None:
             start = self.game.head
