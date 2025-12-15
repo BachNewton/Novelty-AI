@@ -223,16 +223,12 @@ class UnifiedUI:
 
         print(f"\nLoading model: {model_path}")
 
-        # Get observation type from config
-        observation_type = getattr(self.config.training, 'observation_type', 'vector')
-
         # Use device selection from menu
         force_cpu = options.get('device', 'cuda') == 'cpu'
         device_manager = DeviceManager(force_cpu=force_cpu)
         env = SnakeEnv(
             self.config.game.grid_width,
-            self.config.game.grid_height,
-            observation_type=observation_type
+            self.config.game.grid_height
         )
 
         agent = DQNAgent(
