@@ -9,6 +9,7 @@ from .registry import AlgorithmRegistry
 
 # Import algorithm modules to trigger registration
 from . import dqn
+from . import ppo
 
 __all__ = [
     'AlgorithmRegistry',

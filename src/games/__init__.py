@@ -11,13 +11,6 @@ from ..core.game_interface import GameMetadata
 # Register placeholder games for "Coming Soon" display
 _placeholders = [
     GameMetadata(
-        name="Tetris",
-        id="tetris",
-        description="Clear lines by arranging falling pieces",
-        supports_human=True,
-        recommended_algorithms=["dqn", "ppo"]
-    ),
-    GameMetadata(
         name="Pong",
         id="pong",
         description="Classic paddle and ball arcade game",
@@ -32,6 +25,7 @@ for placeholder in _placeholders:
 # Import game modules to trigger registration
 # Each game's __init__.py calls GameRegistry.register()
 from . import snake
+from . import tetris
 
 __all__ = [
     'GameRegistry',

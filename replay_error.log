@@ -1,0 +1,10 @@
+Error in queue mode: 'food'
+Traceback (most recent call last):
+  File "C:\Users\Kyle\hobby\Novelty-AI\scripts\watch_replays.py", line 410, in main
+    run_queue_mode(args.queue, config)
+  File "C:\Users\Kyle\hobby\Novelty-AI\scripts\watch_replays.py", line 353, in run_queue_mode
+    renderer.render(frame)
+  File "C:\Users\Kyle\hobby\Novelty-AI\src\game\renderer.py", line 92, in render
+    food = game_state["food"]
+           ~~~~~~~~~~^^^^^^^^
+KeyError: 'food'

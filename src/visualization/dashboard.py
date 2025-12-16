@@ -17,12 +17,7 @@ from .ui_components import (
     WARNING_COLOR, DANGER_COLOR, CHART_BG, SUCCESS_COLOR
 )
 from ..core.renderer_interface import RendererInterface
-
-# Backwards compatibility import
-try:
-    from ..games.snake.renderer import SnakeRenderer as GameRenderer
-except ImportError:
-    from ..game.renderer import GameRenderer  # type: ignore[assignment]
+from ..games.registry import GameRegistry
 
 
 @dataclass
@@ -67,7 +62,8 @@ class TrainingDashboard:
         chart_update_interval: int = 10,
         show_game: bool = True,
         total_episodes: int = 10000,
-        num_envs: int = 1
+        num_envs: int = 1,
+        game_id: str = 'snake'
     ):
         """
         Initialize the dashboard.
@@ -82,6 +78,7 @@ class TrainingDashboard:
             show_game: If True, show game panel; if False, show training stats
             total_episodes: Total episodes for progress calculation
             num_envs: Number of parallel environments being used
+            game_id: Game identifier for creating the correct renderer
         """
         self.owns_screen = screen is None
         self.window_width = max(window_width, self.MIN_WIDTH)
@@ -91,6 +88,7 @@ class TrainingDashboard:
         self.show_game = show_game
         self.total_episodes = total_episodes
         self.num_envs = num_envs
+        self.game_id = game_id
 
         if screen is None:
             pygame.init()
@@ -194,10 +192,11 @@ class TrainingDashboard:
 
         # Create/update game renderer if showing game
         if self.show_game:
-            self.game_renderer = GameRenderer(
-                cell_size=self.game_cell_size,
-                surface=self.screen,
-                offset=(self.game_rect.x, self.game_rect.y)
+            self.game_renderer = GameRegistry.create_renderer(self.game_id)
+            self.game_renderer.set_cell_size(self.game_cell_size)
+            self.game_renderer.set_render_area(
+                self.game_rect.x, self.game_rect.y,
+                self.game_rect.width, self.game_rect.height
             )
 
     def set_screen(self, screen: pygame.Surface):
@@ -231,7 +230,8 @@ class TrainingDashboard:
         epsilon: float,
         loss: Optional[float] = None,
         steps: int = 0,
-        fps: int = 30
+        fps: int = 30,
+        exploration_label: str = "Epsilon"
     ) -> Any:
         """
         Update the dashboard with current training state.
@@ -240,16 +240,18 @@ class TrainingDashboard:
             game_state: Current game state dict (used if show_game=True)
             episode: Current episode number
             score: Current/final score
-            epsilon: Current exploration rate
+            epsilon: Current exploration rate (or entropy for PPO)
             loss: Latest training loss
             steps: Total training steps (used for stats display)
             fps: Target frame rate
+            exploration_label: Label for exploration metric ("Epsilon" for DQN, "Entropy" for PPO)
 
         Returns:
             False if window was closed
             'switch_mode' if H was pressed
             True otherwise
         """
+        self._exploration_label = exploration_label
         # Track high score continuously
         if score > self.metrics.high_score:
             self.metrics.high_score = score
@@ -364,9 +366,9 @@ class TrainingDashboard:
             self.metrics.high_score = score
 
     def _draw_game_panel(self, game_state: Dict[str, Any]):
-        """Draw the snake game."""
+        """Draw the game visualization."""
         pygame.draw.rect(self.screen, PANEL_COLOR, self.game_rect, border_radius=8)
-        self.game_renderer.render(game_state)
+        self.game_renderer.render(game_state, self.screen)
 
         # Mode hint
         hint = self.font_small.render("Press H for headless mode", True, (100, 100, 100))
@@ -493,12 +495,20 @@ class TrainingDashboard:
         if self.metrics.recent_scores:
             avg_score = np.mean(list(self.metrics.recent_scores))
 
+        # Get exploration label (Epsilon for DQN, Entropy for PPO)
+        explore_label = getattr(self, '_exploration_label', 'Epsilon')
+        # For epsilon, warn if high; for entropy, warn if low
+        if explore_label == 'Epsilon':
+            explore_color = WARNING_COLOR if epsilon > 0.1 else TEXT_COLOR
+        else:  # Entropy
+            explore_color = WARNING_COLOR if epsilon < 0.5 else TEXT_COLOR
+
         metrics_list = [
             (f"Episode: {episode}", TEXT_COLOR),
             (f"Current Score: {score}", TEXT_COLOR),
             (f"High Score: {self.metrics.high_score}", ACCENT_COLOR),
             (f"Avg Score (100): {avg_score:.1f}", TEXT_COLOR),
-            (f"Epsilon: {epsilon:.4f}", WARNING_COLOR if epsilon > 0.1 else TEXT_COLOR),
+            (f"{explore_label}: {epsilon:.4f}", explore_color),
             (f"Parallel Envs: {self.num_envs}", ACCENT_COLOR if self.num_envs > 1 else TEXT_COLOR),
         ]
 
@@ -550,16 +560,21 @@ class TrainingDashboard:
             episodes=self.metrics.episodes
         )
 
-        # Bottom row - Epsilon (left) and Episodes/sec (right)
+        # Bottom row - Exploration metric (left) and Episodes/sec (right)
         row2_y = chart1_y + chart_h + gap
 
-        # Epsilon chart (bottom left)
+        # Get exploration label (Epsilon for DQN, Entropy for PPO)
+        explore_chart_label = getattr(self, '_exploration_label', 'Epsilon')
+        # Entropy can go up to ~2.1 for 8 actions (log(8)), Epsilon is 0-1
+        explore_y_range = (0, 1) if explore_chart_label == 'Epsilon' else (0, 2.5)
+
+        # Exploration chart (bottom left)
         self._draw_line_chart(
             x=chart_x, y=row2_y, width=half_width, height=chart_h,
             data=self.metrics.epsilons,
             color=(0, 200, 255),
-            label="Epsilon",
-            y_range=(0, 1),
+            label=explore_chart_label,
+            y_range=explore_y_range,
             episodes=self.metrics.episodes
         )
 

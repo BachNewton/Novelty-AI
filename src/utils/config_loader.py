@@ -16,14 +16,18 @@ from copy import deepcopy
 
 @dataclass
 class GameConfig:
-    """Game configuration."""
+    """Game configuration - supports both Snake (grid_) and Tetris (board_) naming."""
+    # Generic fields - set during config loading based on game type
     grid_width: int = 20
     grid_height: int = 20
+    # Tetris-specific
+    preview_count: int = 5
 
 
 @dataclass
 class TrainingConfig:
     """Training hyperparameters."""
+    algorithm: str = "dqn"  # Default algorithm; games can override (e.g., Tetris uses "ppo")
     episodes: int = 10000
     batch_size: int = 64
     learning_rate: float = 0.001
@@ -111,8 +115,15 @@ def _dict_to_dataclass(data: dict, cls: type) -> Any:
     # Get the fields that the dataclass expects
     field_names = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
 
+    # Handle field name aliases (e.g., board_width -> grid_width for Tetris)
+    aliased_data = dict(data)
+    if 'board_width' in aliased_data and 'grid_width' not in aliased_data:
+        aliased_data['grid_width'] = aliased_data.pop('board_width')
+    if 'board_height' in aliased_data and 'grid_height' not in aliased_data:
+        aliased_data['grid_height'] = aliased_data.pop('board_height')
+
     # Filter to only include valid fields
-    filtered_data = {k: v for k, v in data.items() if k in field_names}
+    filtered_data = {k: v for k, v in aliased_data.items() if k in field_names}
 
     return cls(**filtered_data)
 

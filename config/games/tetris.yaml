@@ -1,0 +1,60 @@
+# Tetris Game Configuration
+# See docs/games/tetris/EXPERIMENTS.md for rationale behind these values
+
+# Game Settings
+game:
+  board_width: 10
+  board_height: 20
+  preview_count: 5  # Number of next pieces shown
+
+# Training Hyperparameters (PPO recommended)
+training:
+  algorithm: "ppo"  # PPO recommended for Tetris
+  episodes: 50000   # Tetris needs more training than Snake
+
+  # PPO specific
+  learning_rate: 0.0003
+  gamma: 0.99
+  gae_lambda: 0.95      # GAE lambda for advantage estimation
+  clip_epsilon: 0.2     # PPO clipping parameter
+  entropy_coef: 0.1    # Exploration bonus
+  value_coef: 0.5       # Value loss coefficient
+  max_grad_norm: 0.5    # Gradient clipping
+
+  # Batch settings
+  n_steps: 2048         # Steps per rollout
+  batch_size: 64        # Mini-batch size for PPO updates
+  n_epochs: 10          # PPO epochs per rollout
+
+  # Device (cpu for testing, cuda for real training)
+  device: "cpu"
+
+  # Checkpointing
+  save_interval: 500
+  checkpoint_dir: "models/tetris"
+
+# DQN fallback settings (if using DQN instead)
+dqn:
+  epsilon_start: 1.0
+  epsilon_min: 0.02
+  epsilon_decay: 0.9995  # Slower decay for complex game
+  buffer_size: 200000    # Larger buffer for diverse states
+  target_update_freq: 200
+  use_double_dqn: true
+
+# Reward shaping
+rewards:
+  single: 100.0        # 1 line clear
+  double: 300.0        # 2 line clear
+  triple: 500.0        # 3 line clear
+  tetris: 800.0        # 4 line clear (Tetris!)
+  game_over: -100.0    # Game over penalty
+  step: 0.01           # Small survival reward
+  height_penalty: -0.1 # Penalty per max height unit
+
+# Replay Settings
+replay:
+  enabled: true
+  save_dir: "replays/tetris"
+  playback_fps: 5      # Slower for Tetris
+  max_replays: 10

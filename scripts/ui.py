@@ -21,7 +21,7 @@ import subprocess
 import argparse
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -226,6 +226,7 @@ class UnifiedUI:
             show_game=show_game,
             total_episodes=game_config.training.episodes,
             num_envs=num_envs,
+            game_id=game_id,
         )
 
         # Load model path if specified
@@ -237,6 +238,7 @@ class UnifiedUI:
         trainer = Trainer(
             config=self.training_config,
             device=device_manager.get_device(),
+            game_id=game_id,
             num_envs=num_envs,
             dashboard=dashboard,
             on_high_score=self._play_high_score_replay,
@@ -259,7 +261,7 @@ class UnifiedUI:
     def _run_play(self, options, game_id: str, game_config):
         """Run AI watch mode."""
         from src.device.device_manager import DeviceManager
-        from src.algorithms.dqn.agent import DQNAgent
+        from src.algorithms.registry import AlgorithmRegistry
 
         metadata = GameRegistry.get_metadata(game_id)
         game_name = metadata.name if metadata else game_id.title()
@@ -292,13 +294,16 @@ class UnifiedUI:
         # Create environment using registry
         env = GameRegistry.create_env(game_id, width=game_config.game.grid_width, height=game_config.game.grid_height)
 
-        agent = DQNAgent(
-            state_size=env.state_size,
-            action_size=env.action_size,
+        # Create agent using registry based on game's algorithm config
+        algorithm_id = game_config.training.algorithm
+        agent = AlgorithmRegistry.create_agent(
+            algorithm_id=algorithm_id,
+            env=env,
             device=device_manager.get_device()
         )
         agent.load(model_path)
-        agent.epsilon = 0
+        if hasattr(agent, 'epsilon'):
+            agent.epsilon = 0
 
         # Create renderer using registry
         renderer = GameRegistry.create_renderer(game_id)
@@ -402,9 +407,6 @@ class UnifiedUI:
 
     def _run_human(self, game_id: str, game_config):
         """Run human play mode."""
-        # Currently Snake-specific - future games can add their own human play logic
-        from src.games.snake.game import SnakeGame, Direction
-
         metadata = GameRegistry.get_metadata(game_id)
         game_name = metadata.name if metadata else game_id.title()
 
@@ -414,35 +416,108 @@ class UnifiedUI:
 
         pygame.display.set_caption(f"Novelty AI - {game_name} Human Mode")
 
+        # Create game using registry
         grid_w = game_config.game.grid_width
         grid_h = game_config.game.grid_height
-        game = SnakeGame(grid_w, grid_h)
+        game = GameRegistry.create_game(game_id, width=grid_w, height=grid_h)
 
         # Create renderer using registry
         renderer = GameRegistry.create_renderer(game_id)
 
-        cell_size = min(
-            (self.window_width - 40) // grid_w,
-            (self.window_height - 100) // grid_h
-        )
-        game_width = cell_size * grid_w
-        game_height = cell_size * grid_h
-        offset_x = (self.window_width - game_width) // 2
-        offset_y = (self.window_height - game_height - 60) // 2
-        renderer.set_cell_size(cell_size)
-        renderer.set_render_area(offset_x, offset_y, game_width, game_height)
+        # Layout constants
+        controls_height = 35  # Space for controls text at top
+        score_height = 50     # Space for score at bottom
+        side_padding = 20     # Minimal side padding
 
-        print("\nControls: Arrow Keys/WASD=move, R=restart, ESC=menu\n")
+        # Calculate render area based on game type
+        if game_id == 'tetris':
+            # Tetris needs extra width for hold and preview panels
+            # Renderer handles this internally, give it maximum space
+            available_height = self.window_height - controls_height - score_height
+            available_width = self.window_width - side_padding * 2
+
+            # Tetris renderer expects: hold(6*cell) + board(10*cell) + preview(6*cell) + gaps
+            # Total width = 22 * cell_size + 20px gaps
+            # Solve for cell_size
+            cell_size = min(
+                (available_width - 20) // 22,  # Width constraint (hold + board + preview)
+                available_height // (grid_h + 4)  # Height constraint (board + info area)
+            )
+            cell_size = max(15, cell_size)  # Minimum readable size
+
+            total_width = 22 * cell_size + 20
+            total_height = grid_h * cell_size + 80  # 80 for info area
+
+            offset_x = (self.window_width - total_width) // 2
+            offset_y = controls_height + (available_height - total_height) // 2
+        else:
+            # Snake and other games: simple centered board
+            available_height = self.window_height - controls_height - score_height
+            available_width = self.window_width - side_padding * 2
+
+            cell_size = min(
+                available_width // grid_w,
+                available_height // grid_h
+            )
+            cell_size = max(15, cell_size)
+
+            game_width = cell_size * grid_w
+            game_height = cell_size * grid_h
+            offset_x = (self.window_width - game_width) // 2
+            offset_y = controls_height + (available_height - game_height) // 2
+            total_width = game_width
+            total_height = game_height
+
+        renderer.set_cell_size(cell_size)
+        renderer.set_render_area(offset_x, offset_y, total_width, total_height)
+
+        # Get key mappings and controls text for this game
+        key_actions = self._get_human_key_mappings(game_id)
+        controls_text = self._get_controls_display(game_id)
+
+        print(f"\nControls: {self._get_controls_help(game_id)}")
 
         running = True
         game_over = False
         clock = pygame.time.Clock()
-        move_delay = 100
+        move_delay = 100 if game_id == 'snake' else 50  # Tetris needs faster response
         last_move_time = 0
-        pending_direction = None
+        pending_action = None
         high_score = 0
-        font = pygame.font.Font(None, 32)
+        font = pygame.font.Font(None, 28)
+        font_small = pygame.font.Font(None, 22)
         font_large = pygame.font.Font(None, 72)
+
+        game.reset()
+
+        def recalculate_layout():
+            """Recalculate layout after resize."""
+            nonlocal cell_size, offset_x, offset_y, total_width, total_height
+
+            if game_id == 'tetris':
+                available_height = self.window_height - controls_height - score_height
+                available_width = self.window_width - side_padding * 2
+                cell_size = min(
+                    (available_width - 20) // 22,
+                    available_height // (grid_h + 4)
+                )
+                cell_size = max(15, cell_size)
+                total_width = 22 * cell_size + 20
+                total_height = grid_h * cell_size + 80
+                offset_x = (self.window_width - total_width) // 2
+                offset_y = controls_height + (available_height - total_height) // 2
+            else:
+                available_height = self.window_height - controls_height - score_height
+                available_width = self.window_width - side_padding * 2
+                cell_size = min(available_width // grid_w, available_height // grid_h)
+                cell_size = max(15, cell_size)
+                total_width = cell_size * grid_w
+                total_height = cell_size * grid_h
+                offset_x = (self.window_width - total_width) // 2
+                offset_y = controls_height + (available_height - total_height) // 2
+
+            renderer.set_cell_size(cell_size)
+            renderer.set_render_area(offset_x, offset_y, total_width, total_height)
 
         while running:
             current_time = pygame.time.get_ticks()
@@ -453,42 +528,40 @@ class UnifiedUI:
                     return
                 elif event.type == pygame.VIDEORESIZE:
                     self._handle_resize(event)
-                    cell_size = min(
-                        (self.window_width - 40) // grid_w,
-                        (self.window_height - 100) // grid_h
-                    )
-                    game_width = cell_size * grid_w
-                    game_height = cell_size * grid_h
-                    offset_x = (self.window_width - game_width) // 2
-                    offset_y = (self.window_height - game_height - 60) // 2
-                    renderer.set_cell_size(cell_size)
-                    renderer.set_render_area(offset_x, offset_y, game_width, game_height)
+                    recalculate_layout()
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
                     elif event.key == pygame.K_r:
                         game.reset()
                         game_over = False
-                        pending_direction = None
-                    elif not game_over:
-                        if event.key in (pygame.K_UP, pygame.K_w):
-                            pending_direction = Direction.UP
-                        elif event.key in (pygame.K_DOWN, pygame.K_s):
-                            pending_direction = Direction.DOWN
-                        elif event.key in (pygame.K_LEFT, pygame.K_a):
-                            pending_direction = Direction.LEFT
-                        elif event.key in (pygame.K_RIGHT, pygame.K_d):
-                            pending_direction = Direction.RIGHT
+                        pending_action = None
+                    elif not game_over and event.key in key_actions:
+                        pending_action = key_actions[event.key]
 
             if not game_over and current_time - last_move_time >= move_delay:
-                if pending_direction is not None:
-                    _, _, game_over, info = game.step_direction(pending_direction)
+                if pending_action is not None:
+                    if game_id == 'snake':
+                        # Snake uses step_direction with Direction enum
+                        from src.games.snake.game import Direction
+                        direction_map = {0: Direction.UP, 1: Direction.DOWN, 2: Direction.LEFT, 3: Direction.RIGHT}
+                        _, _, game_over, info = game.step_direction(direction_map[pending_action])  # type: ignore[attr-defined]
+                    else:
+                        _, _, game_over, info = game.step(pending_action)
+                        # For Tetris, clear action after use (except for soft drop which can repeat)
+                        if game_id == 'tetris' and pending_action != 5:  # 5 = SOFT_DROP
+                            pending_action = None
                 else:
-                    _, _, game_over, info = game.step(0)
+                    # Default action: NOOP for Tetris (gravity still ticks), forward for Snake
+                    if game_id == 'snake':
+                        _, _, game_over, info = game.step(0)
+                    else:
+                        # Tetris: call step with NOOP (0) so gravity applies
+                        _, _, game_over, info = game.step(0)
                 last_move_time = current_time
 
                 if game_over:
-                    final_score = game.score
+                    final_score = game.score  # type: ignore[attr-defined]
                     if final_score > high_score:
                         high_score = final_score
                         print(f"NEW HIGH SCORE: {final_score}!")
@@ -496,25 +569,81 @@ class UnifiedUI:
                         print(f"Game Over! Score: {final_score}")
 
             self.screen.fill((40, 44, 52))  # Novelty AI background
+
+            # Draw controls bar at top
+            controls_surface = font_small.render(controls_text, True, (150, 150, 150))
+            self.screen.blit(controls_surface, (self.window_width // 2 - controls_surface.get_width() // 2, 10))
+
+            # Draw game
             game_state = game.get_state()
             renderer.render(game_state, self.screen)
 
-            score_text = font.render(f"Score: {game.score}", True, (220, 220, 220))
-            self.screen.blit(score_text, (self.window_width // 2 - score_text.get_width() // 2, self.window_height - 70))
+            # Draw score at bottom
+            score_text = font.render(f"Score: {game.score}", True, (220, 220, 220))  # type: ignore[attr-defined]
+            self.screen.blit(score_text, (self.window_width // 2 - score_text.get_width() // 2, self.window_height - 45))
 
-            high_text = font.render(f"High Score: {high_score}", True, (150, 150, 150))
-            self.screen.blit(high_text, (self.window_width // 2 - high_text.get_width() // 2, self.window_height - 40))
+            high_text = font_small.render(f"High Score: {high_score}  |  R=Restart  ESC=Menu", True, (100, 100, 100))
+            self.screen.blit(high_text, (self.window_width // 2 - high_text.get_width() // 2, self.window_height - 20))
 
             if game_over:
+                # Semi-transparent overlay
+                overlay = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 150))
+                self.screen.blit(overlay, (0, 0))
+
                 game_over_text = font_large.render("GAME OVER", True, (255, 100, 100))
                 self.screen.blit(game_over_text, (self.window_width // 2 - game_over_text.get_width() // 2, self.window_height // 2 - 60))
+
+                final_score_text = font.render(f"Final Score: {game.score}", True, (220, 220, 220))  # type: ignore[attr-defined]
+                self.screen.blit(final_score_text, (self.window_width // 2 - final_score_text.get_width() // 2, self.window_height // 2))
+
                 restart_text = font.render("Press R to restart", True, (200, 200, 200))
-                self.screen.blit(restart_text, (self.window_width // 2 - restart_text.get_width() // 2, self.window_height // 2 + 20))
+                self.screen.blit(restart_text, (self.window_width // 2 - restart_text.get_width() // 2, self.window_height // 2 + 40))
 
             pygame.display.flip()
             clock.tick(60)
 
         pygame.display.set_caption("Novelty AI")
+
+    def _get_human_key_mappings(self, game_id: str) -> Dict[int, int]:
+        """Get keyboard to action mappings for human play."""
+        if game_id == 'snake':
+            # Snake: 0=forward, 1=left, 2=right (relative to current direction)
+            # We'll use absolute directions via step_direction instead
+            return {
+                pygame.K_UP: 0, pygame.K_w: 0,      # UP
+                pygame.K_DOWN: 1, pygame.K_s: 1,   # DOWN
+                pygame.K_LEFT: 2, pygame.K_a: 2,   # LEFT
+                pygame.K_RIGHT: 3, pygame.K_d: 3,  # RIGHT
+            }
+        elif game_id == 'tetris':
+            # Tetris: 0=noop, 1=left, 2=right, 3=rotate_cw, 4=rotate_ccw, 5=soft_drop, 6=hard_drop, 7=hold
+            return {
+                pygame.K_LEFT: 1, pygame.K_a: 1,       # LEFT
+                pygame.K_RIGHT: 2, pygame.K_d: 2,     # RIGHT
+                pygame.K_UP: 3, pygame.K_w: 3,        # ROTATE CW
+                pygame.K_z: 4,                         # ROTATE CCW
+                pygame.K_DOWN: 5, pygame.K_s: 5,      # SOFT DROP
+                pygame.K_SPACE: 6,                     # HARD DROP
+                pygame.K_c: 7, pygame.K_LSHIFT: 7,    # HOLD
+            }
+        return {}
+
+    def _get_controls_help(self, game_id: str) -> str:
+        """Get controls help text for a game (console output)."""
+        if game_id == 'snake':
+            return "Arrow Keys/WASD=move, R=restart, ESC=menu"
+        elif game_id == 'tetris':
+            return "Arrows=move/rotate, Z=rotate CCW, Space=hard drop, C/Shift=hold, R=restart, ESC=menu"
+        return "R=restart, ESC=menu"
+
+    def _get_controls_display(self, game_id: str) -> str:
+        """Get formatted controls text for on-screen display."""
+        if game_id == 'snake':
+            return "Arrow Keys / WASD: Move"
+        elif game_id == 'tetris':
+            return "Left/Right: Move   Up/W: Rotate   Z: Rotate CCW   Down/S: Soft Drop   Space: Hard Drop   C/Shift: Hold"
+        return "Use arrow keys to play"
 
     def _run_replays(self, options, game_id: str, game_config):
         """Run replay viewer."""

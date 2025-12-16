@@ -4,6 +4,7 @@
 - Running on Windows with Git Bash (MINGW)
 - Use `/dev/null` instead of `nul` for redirecting output
 - Shell is Unix-like, not CMD
+- Working directory is already set to project root - no need to `cd` before commands
 
 ## Project Overview
 
@@ -252,6 +253,30 @@ Mypy catches errors instantly that would otherwise only appear at runtime when y
 
 2. Register with `AlgorithmRegistry.register()`
 
+## Pygame UI Notes
+
+### No Unicode/Special Characters
+Pygame's default font does not support unicode or special characters (arrows, symbols, etc.). Always use ASCII text for any on-screen display.
+
+**Bad** (won't render correctly):
+```python
+text = "←→: Move   ↑↓: Navigate"
+```
+
+**Good** (ASCII only):
+```python
+text = "Left/Right: Move   Up/Down: Navigate"
+```
+
+## Technical Debt and Cleanup
+
+When you encounter code that should be cleaned up later (backwards compatibility imports, unused code, etc.), add it to `docs/CLEANUP.md`. Check this file periodically and address items when time permits.
+
+**Important**: Keep CLEANUP.md up to date when you:
+- Add workarounds or temporary code
+- Notice backwards compatibility imports that could be removed
+- Find duplicate code patterns that should be consolidated
+
 ## Key Files Reference
 
 | Purpose | File |
@@ -264,6 +289,7 @@ Mypy catches errors instantly that would otherwise only appear at runtime when y
 | CLI training | `scripts/train.py` |
 | Model evaluation | `scripts/evaluate.py` |
 | Snake experiments | `docs/games/snake/EXPERIMENTS.md` |
+| Cleanup tasks | `docs/CLEANUP.md` |
 
 ## CLI Quick Reference
 

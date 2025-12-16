@@ -156,6 +156,7 @@ def train_headless(config, device_manager, game_id: str, load_path: Optional[str
     trainer = Trainer(
         config=config,
         device=device_manager.get_device(),
+        game_id=game_id,
         num_envs=num_envs,
         dashboard=None,
         on_high_score=on_high_score,
@@ -204,6 +205,7 @@ def train_with_visualization(config, device_manager, game_id: str, load_path: Op
     trainer = Trainer(
         config=config,
         device=device_manager.get_device(),
+        game_id=game_id,
         num_envs=num_envs,
         dashboard=dashboard,
         on_high_score=None,

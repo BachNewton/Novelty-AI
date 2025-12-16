@@ -8,7 +8,6 @@ from typing import Dict, Type, List, Optional, Any
 import torch
 
 from ..core.agent_interface import AgentInterface
-from ..core.env_interface import EnvInterface
 
 
 class AlgorithmRegistry:
@@ -97,7 +96,7 @@ class AlgorithmRegistry:
     def create_agent(
         cls,
         algorithm_id: str,
-        env: EnvInterface,
+        env: Any,
         device: torch.device,
         config: Optional[Dict[str, Any]] = None
     ) -> AgentInterface:
@@ -106,7 +105,7 @@ class AlgorithmRegistry:
 
         Args:
             algorithm_id: The algorithm identifier
-            env: Environment to get state/action sizes from
+            env: Environment with state_size and action_size properties
             device: PyTorch device to use
             config: Optional configuration dictionary
 
