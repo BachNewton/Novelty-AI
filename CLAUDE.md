@@ -32,24 +32,34 @@ Novelty-AI/
 │   │   ├── env_interface.py      # EnvInterface ABC (gym-like)
 │   │   ├── agent_interface.py    # AgentInterface ABC
 │   │   └── renderer_interface.py # RendererInterface ABC
+│   ├── device/                   # Hardware management
+│   │   └── device_manager.py     # GPU/CPU device selection
 │   ├── games/                    # Game implementations
 │   │   ├── registry.py           # GameRegistry
 │   │   └── snake/                # Snake game
 │   ├── algorithms/               # AI algorithms
 │   │   ├── registry.py           # AlgorithmRegistry
+│   │   ├── common/               # Shared utilities (replay buffer)
 │   │   └── dqn/                  # Deep Q-Network
 │   ├── training/                 # Training infrastructure
 │   │   ├── trainer.py            # Generic trainer
 │   │   └── vec_env.py            # Vectorized environments
+│   ├── utils/                    # Utility modules
+│   │   └── config_loader.py      # Config loading utilities
 │   └── visualization/            # UI components
+│       ├── ui_components.py      # Button, Dropdown, Toggle widgets
 │       ├── game_hub.py           # Game selection hub
 │       ├── game_menu.py          # Per-game menu
-│       └── dashboard.py          # Training dashboard
+│       ├── main_menu.py          # Main menu screen
+│       ├── dashboard.py          # Training dashboard
+│       ├── replay_player.py      # Replay viewing
+│       └── hardware_monitor.py   # GPU/CPU stats display
 ├── scripts/
 │   ├── ui.py                     # UI entry point
 │   ├── train.py                  # CLI training
 │   ├── play.py                   # CLI AI/human play
-│   └── evaluate.py               # Model evaluation
+│   ├── evaluate.py               # Model evaluation
+│   └── watch_replays.py          # CLI replay viewer
 ├── models/{game_id}/             # Per-game trained models
 └── replays/{game_id}/            # Per-game replays
 ```
@@ -142,6 +152,7 @@ tests/
 ├── test_ui_components.py    # Button, Dropdown, Toggle tests
 ├── test_screens.py          # GameHub, GameMenu, Dashboard init tests
 ├── test_ui_integration.py   # Entry points, dropdown population
+├── test_ui_click_paths.py   # UI navigation and click flow tests
 └── test_infrastructure.py   # GameRegistry, config loading
 ```
 
@@ -259,10 +270,12 @@ Mypy catches errors instantly that would otherwise only appear at runtime when y
 | Game registry | `src/games/registry.py` |
 | Algorithm registry | `src/algorithms/registry.py` |
 | Config loader | `src/utils/config_loader.py` |
+| Device management | `src/device/device_manager.py` |
 | Trainer | `src/training/trainer.py` |
 | UI entry | `scripts/ui.py` |
 | CLI training | `scripts/train.py` |
 | Model evaluation | `scripts/evaluate.py` |
+| Replay viewer | `scripts/watch_replays.py` |
 | Snake experiments | `docs/games/snake/EXPERIMENTS.md` |
 
 ## CLI Quick Reference
@@ -284,4 +297,8 @@ python scripts/play.py -g snake --human             # Play yourself
 # Evaluation
 python scripts/evaluate.py -g snake                 # Stats
 python scripts/evaluate.py -g snake --json          # JSON output
+
+# Replays
+python scripts/watch_replays.py                     # Watch all replays
+python scripts/watch_replays.py --list              # List available replays
 ```
