@@ -15,7 +15,7 @@ import numpy as np
 # New structure imports
 from ..games.registry import GameRegistry
 from ..algorithms.registry import AlgorithmRegistry
-from .vec_env import VectorizedEnv
+from .vec_env import VectorizedEnv, create_vectorized_env
 from ..visualization.replay_player import ReplayManager
 
 # Backwards compatibility
@@ -42,6 +42,9 @@ def get_default_num_envs() -> int:
 @dataclass
 class TrainingConfig:
     """Configuration for training."""
+    # Game identification
+    game_id: str = "snake"
+
     # Grid settings
     grid_width: int = 20
     grid_height: int = 20
@@ -148,6 +151,7 @@ class Trainer:
         on_high_score: Optional[Callable[[str, int, int], None]] = None,
         start_episode: int = 0,
         load_path: Optional[str] = None,
+        use_multiprocessing: bool = True,
     ):
         """
         Initialize the trainer.
@@ -160,6 +164,7 @@ class Trainer:
             on_high_score: Callback(replay_path, score, episode) when high score achieved
             start_episode: Episode to start from (for resuming)
             load_path: Path to load model from
+            use_multiprocessing: If True, use multiprocessing for true parallelism
         """
         self.config = config
         self.device = device
@@ -167,6 +172,7 @@ class Trainer:
         self.dashboard = dashboard
         self.on_high_score = on_high_score
         self.start_episode = start_episode
+        self.use_multiprocessing = use_multiprocessing
 
         # Create directories
         Path(config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
@@ -176,20 +182,22 @@ class Trainer:
         # Initialize environments
         reward_config = config.get_reward_config()
 
-        self.vec_env = VectorizedEnv(
-            game_id='snake',  # TODO: Make configurable when more games are added
+        self.vec_env = create_vectorized_env(
+            game_id=config.game_id,
             num_envs=self.num_envs,
             env_config={
                 'width': config.grid_width,
                 'height': config.grid_height,
                 'reward_config': reward_config,
-            }
+            },
+            use_multiprocessing=self.use_multiprocessing,
         )
 
         # Display environment for visualization
-        self.display_env = SnakeEnv(
-            config.grid_width,
-            config.grid_height,
+        self.display_env = GameRegistry.create_env(
+            config.game_id,
+            width=config.grid_width,
+            height=config.grid_height,
             reward_config=reward_config,
         )
 
@@ -204,7 +212,11 @@ class Trainer:
         # Load model if specified
         if load_path and Path(load_path).exists():
             print(f"[Training] Loading model from {load_path}")
-            self.agent.load(load_path)
+            loaded_episode = self.agent.load(load_path)
+            # If resuming, use the episode from checkpoint
+            if start_episode == 0 and loaded_episode > 0:
+                self.start_episode = loaded_episode
+                print(f"[Training] Resuming from episode {loaded_episode}")
 
         # Replay manager
         self.replay_manager = None
@@ -219,6 +231,7 @@ class Trainer:
         self.step_count = 0
         self.high_score = 0
         self.recent_scores: List[int] = []
+        self.last_episode = 0  # Track for save_final_model
 
     def train(self, render_fps: int = 30) -> int:
         """
@@ -269,6 +282,7 @@ class Trainer:
             for i in range(num_envs):
                 if dones[i]:
                     episode_count += 1
+                    self.last_episode = episode_count
                     score = infos[i]["score"]
 
                     # Record metrics
@@ -312,7 +326,7 @@ class Trainer:
                     # Checkpoint saving
                     if episode_count % self.config.save_interval == 0:
                         checkpoint_path = f"{self.config.checkpoint_dir}/model_ep{episode_count}.pth"
-                        self.agent.save(checkpoint_path)
+                        self.agent.save(checkpoint_path, episode=episode_count)
                         print(f"[Checkpoint] Saved model at episode {episode_count}")
 
                     if episode_count >= total_episodes:
@@ -353,7 +367,7 @@ class Trainer:
     def save_final_model(self):
         """Save the final model."""
         final_path = f"{self.config.checkpoint_dir}/final_model.pth"
-        self.agent.save(final_path)
+        self.agent.save(final_path, episode=self.last_episode)
         print(f"[Training] Saved final model to {final_path}")
         return final_path
 

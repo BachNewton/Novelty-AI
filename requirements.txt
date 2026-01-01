@@ -14,5 +14,8 @@ GPUtil>=1.4.0
 WMI>=1.5.1
 pywin32>=306
 
+# Terminal UI
+rich>=13.0.0
+
 # Optional: AMD GPU support (uncomment if needed)
 # pip install torch-directml

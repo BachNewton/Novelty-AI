@@ -17,12 +17,7 @@ from .ui_components import (
     WARNING_COLOR, DANGER_COLOR, CHART_BG, SUCCESS_COLOR
 )
 from ..core.renderer_interface import RendererInterface
-
-# Backwards compatibility import
-try:
-    from ..games.snake.renderer import SnakeRenderer as GameRenderer
-except ImportError:
-    from ..game.renderer import GameRenderer  # type: ignore[assignment]
+from ..games.registry import GameRegistry
 
 
 @dataclass
@@ -67,7 +62,8 @@ class TrainingDashboard:
         chart_update_interval: int = 10,
         show_game: bool = True,
         total_episodes: int = 10000,
-        num_envs: int = 1
+        num_envs: int = 1,
+        game_id: str = "snake",
     ):
         """
         Initialize the dashboard.
@@ -91,6 +87,7 @@ class TrainingDashboard:
         self.show_game = show_game
         self.total_episodes = total_episodes
         self.num_envs = num_envs
+        self.game_id = game_id
 
         if screen is None:
             pygame.init()
@@ -194,10 +191,11 @@ class TrainingDashboard:
 
         # Create/update game renderer if showing game
         if self.show_game:
-            self.game_renderer = GameRenderer(
-                cell_size=self.game_cell_size,
-                surface=self.screen,
-                offset=(self.game_rect.x, self.game_rect.y)
+            self.game_renderer = GameRegistry.create_renderer(self.game_id)
+            self.game_renderer.set_cell_size(self.game_cell_size)
+            self.game_renderer.set_render_area(
+                self.game_rect.x, self.game_rect.y,
+                self.game_rect.width, self.game_rect.height
             )
 
     def set_screen(self, screen: pygame.Surface):

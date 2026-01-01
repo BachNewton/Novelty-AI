@@ -146,3 +146,36 @@ class VectorizedEnv:
 
 # Backwards compatibility alias
 VectorizedSnakeEnv = VectorizedEnv
+
+
+def create_vectorized_env(
+    game_id: str,
+    num_envs: int,
+    env_config: Optional[Dict[str, Any]] = None,
+    use_multiprocessing: bool = True,
+):
+    """
+    Factory function to create a vectorized environment.
+
+    Automatically chooses between multiprocessing (true parallelism) and
+    threading (limited by GIL) based on the use_multiprocessing flag.
+
+    Args:
+        game_id: ID of the game to create environments for
+        num_envs: Number of parallel environments
+        env_config: Configuration to pass to environment constructors
+        use_multiprocessing: If True, use multiprocessing for true parallelism.
+                            If False, use threading (fallback).
+
+    Returns:
+        VectorizedEnv or MultiprocessVecEnv instance
+    """
+    if use_multiprocessing and num_envs > 1:
+        try:
+            from .mp_vec_env import MultiprocessVecEnv
+            return MultiprocessVecEnv(game_id, num_envs, env_config)
+        except Exception as e:
+            print(f"[Warning] Multiprocessing failed ({e}), falling back to threading")
+            return VectorizedEnv(game_id, num_envs, env_config)
+    else:
+        return VectorizedEnv(game_id, num_envs, env_config)

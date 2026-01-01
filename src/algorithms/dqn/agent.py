@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ...core.agent_interface import AgentInterface
 from ..common.replay_buffer import ReplayBuffer
+from ..common.fast_replay_buffer import FastReplayBuffer
 from .network import DQNNetwork
 
 
@@ -62,6 +63,9 @@ class DQNAgent(AgentInterface):
         # Double DQN reduces Q-value overestimation
         self.use_double_dqn = config.get("use_double_dqn", True)
 
+        # Use fast replay buffer for async training
+        self.use_fast_buffer = config.get("use_fast_buffer", False)
+
         # Networks
         self.policy_net = DQNNetwork(state_size, 256, action_size).to(self.device)
         self.target_net = DQNNetwork(state_size, 256, action_size).to(self.device)
@@ -75,8 +79,11 @@ class DQNAgent(AgentInterface):
         )
         self.criterion = nn.SmoothL1Loss()
 
-        # Replay buffer
-        self.memory = ReplayBuffer(buffer_size)
+        # Replay buffer (fast buffer for async training)
+        if self.use_fast_buffer:
+            self.memory = FastReplayBuffer(buffer_size, state_size)
+        else:
+            self.memory = ReplayBuffer(buffer_size)
 
         # Training statistics
         self.steps_done = 0
@@ -138,6 +145,22 @@ class DQNAgent(AgentInterface):
     ) -> None:
         """Store transition in replay buffer."""
         self.memory.push(state, action, reward, next_state, done)
+
+    def store_transitions_batch(
+        self,
+        states: np.ndarray,
+        actions: np.ndarray,
+        rewards: np.ndarray,
+        next_states: np.ndarray,
+        dones: np.ndarray
+    ) -> None:
+        """Store a batch of transitions (more efficient for vectorized envs)."""
+        if self.use_fast_buffer:
+            self.memory.push_batch(states, actions, rewards, next_states, dones)
+        else:
+            # Fall back to individual pushes
+            for i in range(len(states)):
+                self.memory.push(states[i], actions[i], rewards[i], next_states[i], dones[i])
 
     def train_step(self) -> Optional[float]:
         """
@@ -208,12 +231,13 @@ class DQNAgent(AgentInterface):
         else:
             self.policy_net.eval()
 
-    def save(self, filepath: str) -> None:
+    def save(self, filepath: str, episode: int = 0) -> None:
         """
         Save model checkpoint.
 
         Args:
             filepath: Path to save checkpoint
+            episode: Current episode number (for resume support)
         """
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
 
@@ -223,15 +247,19 @@ class DQNAgent(AgentInterface):
             "optimizer_state_dict": self.optimizer.state_dict(),
             "epsilon": self.epsilon,
             "steps_done": self.steps_done,
+            "episode": episode,
             "training_losses": self.training_losses[-1000:],  # Keep last 1000
         }, filepath)
 
-    def load(self, filepath: str) -> None:
+    def load(self, filepath: str) -> int:
         """
         Load model checkpoint.
 
         Args:
             filepath: Path to load checkpoint from
+
+        Returns:
+            Episode number from checkpoint (0 if not saved)
         """
         checkpoint = torch.load(filepath, map_location=self.device, weights_only=True)
 
@@ -243,6 +271,8 @@ class DQNAgent(AgentInterface):
 
         if "training_losses" in checkpoint:
             self.training_losses = checkpoint["training_losses"]
+
+        return checkpoint.get("episode", 0)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get current training statistics."""

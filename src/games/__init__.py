@@ -32,6 +32,7 @@ for placeholder in _placeholders:
 # Import game modules to trigger registration
 # Each game's __init__.py calls GameRegistry.register()
 from . import snake
+from . import space_invaders
 
 __all__ = [
     'GameRegistry',

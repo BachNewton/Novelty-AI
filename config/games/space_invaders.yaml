@@ -1,0 +1,71 @@
+# Space Invaders Game Configuration
+# See docs/games/space_invaders/EXPERIMENTS.md for rationale
+
+# Game Settings
+game:
+  grid_width: 224         # Classic arcade resolution (used by config loader)
+  grid_height: 256
+
+  # Player (classic arcade speeds)
+  player_speed: 1.0             # Classic: 1px/frame (same as enemy bullet)
+  player_bullet_speed: 4.0      # Classic: 4px/frame (4x player speed)
+  player_start_lives: 3
+
+  # Invaders (one alien moves per frame, 2px step)
+  invader_rows: 5
+  invader_cols: 11
+  march_step: 2                 # Classic: 2px per alien step
+  invader_bullet_speed: 1.0     # Classic: 1px/frame (same as player speed)
+  invader_drop_distance: 8.0   # Classic arcade: 8 pixels per drop
+  base_fire_cooldown: 60      # Frames between invader shots
+  max_invader_projectiles: 3  # Max enemy projectiles on screen
+
+  # Wave progression (classic: Wave 2 at Y=80, Wave 3 at Y=96, max Y=120)
+  wave_start_offset: 8.0      # Each wave starts this many pixels lower
+
+  # Mystery ship
+  mystery_ship_speed: 2.0
+  mystery_ship_spawn_interval: 600  # Frames between spawn chances
+
+# Training Hyperparameters
+training:
+  episodes: 10000             # More episodes due to game complexity
+  batch_size: 64
+  learning_rate: 0.0005       # Slightly lower for stability
+  gamma: 0.99                 # Discount factor
+
+  # Epsilon (exploration) - slower decay for complex game
+  epsilon_start: 1.0
+  epsilon_min: 0.05
+  epsilon_decay: 0.9995
+
+  # Experience replay - larger buffer for complex game
+  buffer_size: 200000
+  target_update_freq: 200
+
+  # Double DQN reduces Q-value overestimation
+  use_double_dqn: true
+
+  # Checkpointing
+  save_interval: 200
+  checkpoint_dir: "models/space_invaders"
+
+# Reward shaping (tuned for RL)
+rewards:
+  kill_bottom: 1.0            # 10-point invaders (large, bottom rows)
+  kill_middle: 2.0            # 20-point invaders (medium, middle rows)
+  kill_top: 3.0               # 30-point invaders (small, top row)
+  mystery_ship: 5.0           # Bonus for timing skill
+  wave_clear: 20.0            # Major milestone
+  death: -10.0                # Losing a life
+  game_over: -50.0            # Strong deterrent
+  step_penalty: -0.001        # Encourage efficiency
+  survival_bonus: 0.01        # Small reward for staying alive
+  edge_priority: 0.2          # Bonus for killing edge invaders
+
+# Replay Settings
+replay:
+  enabled: true
+  save_dir: "replays/space_invaders"
+  playback_fps: 30            # Match game speed
+  max_replays: 10             # Keep only the best N replays

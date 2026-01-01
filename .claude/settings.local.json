@@ -8,14 +8,14 @@
       "Bash(dir:*)",
       "Bash(findstr:*)",
       "Bash(python:*)",
-      "Bash(timeout 5 python:*)",
+      "Bash(timeout:*)",
       "Bash(cat:*)",
       "Bash(ls:*)",
-      "Bash(timeout 10 python:*)",
       "Bash(pip show:*)",
       "Bash(tree:*)",
       "Bash(find:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(time:*)"
     ]
   }
 }

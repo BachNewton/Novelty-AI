@@ -286,14 +286,17 @@ class ReplayWindow:
         font_medium = pygame.font.Font(None, 32)
         clock = pygame.time.Clock()
 
-        # Import renderer here to avoid circular imports
-        from ..game.renderer import GameRenderer
+        # Import Snake renderer
+        from ..games.snake.renderer import SnakeRenderer
 
-        renderer = GameRenderer(
+        renderer = SnakeRenderer(
             cell_size=self.cell_size,
-            surface=self.window,
-            offset=(padding, padding)
+            grid_width=self.grid_width,
+            grid_height=self.grid_height,
         )
+        renderer.set_render_area(padding, padding,
+                                  self.grid_width * self.cell_size,
+                                  self.grid_height * self.cell_size)
 
         current_replay: Optional[ReplayData] = None
         frame_idx = 0
@@ -336,7 +339,7 @@ class ReplayWindow:
 
             if frame_idx < len(current_replay.frames):
                 frame = current_replay.frames[frame_idx]
-                renderer.render(frame)
+                renderer.render(frame, self.window)
 
                 # Draw info
                 info_text = f"Episode {current_replay.episode} | Score: {frame.get('score', 0)}"

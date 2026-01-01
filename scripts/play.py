@@ -71,8 +71,8 @@ Examples:
     parser.add_argument(
         "--fps",
         type=int,
-        default=10,
-        help="Playback speed (default: 10)"
+        default=60,
+        help="Playback speed (default: 60)"
     )
     parser.add_argument(
         "--games",
@@ -130,6 +130,7 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
     )
     agent.load(model_path)
     agent.epsilon = 0
+    agent.set_training_mode(False)  # Disable dropout for inference
 
     print(f"\nWatching {game_name} AI play...")
     print("Controls: SPACE=pause, +/-=speed, R=restart, ESC=quit\n")
@@ -154,6 +155,10 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
     font = pygame.font.Font(None, 32)
     state = env.reset()
     current_fps = fps
+    frame_count = 0
+
+    # Debug: Show Q-values for first few frames
+    action_names = ["STAY", "STAY+FIRE", "LEFT", "LEFT+FIRE", "RIGHT", "RIGHT+FIRE"]
 
     while running:
         for event in pygame.event.get():
@@ -176,6 +181,7 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
                     paused = not paused
                 elif event.key == pygame.K_r:
                     state = env.reset()
+                    frame_count = 0
                 elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
                     current_fps = min(60, current_fps + 5)
                 elif event.key == pygame.K_MINUS:
@@ -186,6 +192,16 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
             continue
 
         action = agent.select_action(state, training=False)
+
+        # Debug: Print Q-values for first 10 frames
+        frame_count += 1
+        if frame_count <= 10:
+            import torch
+            with torch.no_grad():
+                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(agent.device)
+                q_values = agent.policy_net(state_tensor).cpu().numpy()[0]
+            print(f"Frame {frame_count}: action={action_names[action]}, Q-values={[f'{q:.2f}' for q in q_values]}")
+
         state, reward, done, info = env.step(action)
 
         screen.fill((40, 44, 52))
@@ -218,6 +234,7 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
             else:
                 pygame.time.wait(500)
                 state = env.reset()
+                frame_count = 0
 
         clock.tick(current_fps)
 
@@ -227,8 +244,6 @@ def watch_ai_play(game_id: str, model_path: str, device_manager, fps: int = 10, 
 
 def play_human(game_id: str):
     """Play game as a human."""
-    from src.games.snake.game import SnakeGame, Direction
-
     config = load_game_config(game_id)
     metadata = GameRegistry.get_metadata(game_id)
     game_name = metadata.name if metadata else game_id.title()
@@ -245,7 +260,15 @@ def play_human(game_id: str):
 
     grid_w = config.game.grid_width
     grid_h = config.game.grid_height
-    game = SnakeGame(grid_w, grid_h)
+
+    # Create game using registry (use classic speed for human play)
+    env = GameRegistry.create_env(
+        game_id,
+        width=grid_w,
+        height=grid_h,
+        training_speed_multiplier=1.0,  # Classic arcade speed for human play
+    )
+    env.reset()
 
     renderer = GameRegistry.create_renderer(game_id)
 
@@ -257,18 +280,35 @@ def play_human(game_id: str):
     renderer.set_cell_size(cell_size)
     renderer.set_render_area(offset_x, offset_y, game_width, game_height)
 
-    print(f"\nPlaying {game_name} as human...")
-    print("Controls: Arrow Keys/WASD=move, R=restart, ESC=quit\n")
+    # Game-specific controls info
+    if game_id == "snake":
+        print(f"\nPlaying {game_name} as human...")
+        print("Controls: Arrow Keys/WASD=move, R=restart, ESC=quit\n")
+    elif game_id == "space_invaders":
+        print(f"\nPlaying {game_name} as human...")
+        print("Controls: Left/Right or A/D=move, SPACE=fire, R=restart, ESC=quit\n")
+    else:
+        print(f"\nPlaying {game_name} as human...")
+        print("Controls: Arrow Keys/WASD=move, SPACE=action, R=restart, ESC=quit\n")
 
     running = True
     game_over = False
     clock = pygame.time.Clock()
-    move_delay = 100
-    last_move_time = 0
-    pending_direction = None
     high_score = 0
     font = pygame.font.Font(None, 32)
     font_large = pygame.font.Font(None, 72)
+
+    # Game-specific timing
+    if game_id == "snake":
+        move_delay = 100  # Snake moves on timer (ms between moves)
+        last_move_time = 0
+        pending_direction = None
+    elif game_id == "space_invaders":
+        move_delay = 16  # ~60 FPS for classic arcade timing
+        last_move_time = 0
+    else:
+        move_delay = 50  # Default delay
+        last_move_time = 0
 
     while running:
         current_time = pygame.time.get_ticks()
@@ -290,28 +330,57 @@ def play_human(game_id: str):
                 if event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_r:
-                    game.reset()
+                    env.reset()
                     game_over = False
-                    pending_direction = None
-                elif not game_over:
-                    if event.key in (pygame.K_UP, pygame.K_w):
-                        pending_direction = Direction.UP
-                    elif event.key in (pygame.K_DOWN, pygame.K_s):
-                        pending_direction = Direction.DOWN
-                    elif event.key in (pygame.K_LEFT, pygame.K_a):
-                        pending_direction = Direction.LEFT
-                    elif event.key in (pygame.K_RIGHT, pygame.K_d):
-                        pending_direction = Direction.RIGHT
+                    if game_id == "snake":
+                        pending_direction = None
 
-        if not game_over and current_time - last_move_time >= move_delay:
-            if pending_direction is not None:
-                _, _, game_over, info = game.step_direction(pending_direction)
+        if not game_over:
+            if game_id == "snake":
+                # Snake: direction-based movement on timer
+                from src.games.snake.game import Direction
+                keys = pygame.key.get_pressed()
+                if keys[pygame.K_UP] or keys[pygame.K_w]:
+                    pending_direction = Direction.UP
+                elif keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                    pending_direction = Direction.DOWN
+                elif keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                    pending_direction = Direction.LEFT
+                elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                    pending_direction = Direction.RIGHT
+
+                if current_time - last_move_time >= move_delay:
+                    if pending_direction is not None:
+                        _, _, game_over, info = env.game.step_direction(pending_direction)
+                    else:
+                        _, _, game_over, info = env.step(0)
+                    last_move_time = current_time
+
+            elif game_id == "space_invaders":
+                # Space Invaders: continuous input with timing
+                # Actions: 0=STAY_NO_FIRE, 1=STAY_FIRE, 2=LEFT_NO_FIRE, 3=LEFT_FIRE, 4=RIGHT_NO_FIRE, 5=RIGHT_FIRE
+                if current_time - last_move_time >= move_delay:
+                    keys = pygame.key.get_pressed()
+                    move_left = keys[pygame.K_LEFT] or keys[pygame.K_a]
+                    move_right = keys[pygame.K_RIGHT] or keys[pygame.K_d]
+                    fire = keys[pygame.K_SPACE]
+
+                    if move_left:
+                        action = 3 if fire else 2  # LEFT_FIRE or LEFT_NO_FIRE
+                    elif move_right:
+                        action = 5 if fire else 4  # RIGHT_FIRE or RIGHT_NO_FIRE
+                    else:
+                        action = 1 if fire else 0  # STAY_FIRE or STAY_NO_FIRE
+
+                    _, _, game_over, info = env.step(action)
+                    last_move_time = current_time
+
             else:
-                _, _, game_over, info = game.step(0)
-            last_move_time = current_time
+                # Generic: use action 0 (no-op)
+                _, _, game_over, info = env.step(0)
 
             if game_over:
-                final_score = game.score
+                final_score = env.get_score()
                 if final_score > high_score:
                     high_score = final_score
                     print(f"NEW HIGH SCORE: {final_score}!")
@@ -319,10 +388,10 @@ def play_human(game_id: str):
                     print(f"Game Over! Score: {final_score}")
 
         screen.fill((40, 44, 52))
-        game_state = game.get_state()
+        game_state = env.get_game_state()
         renderer.render(game_state, screen)
 
-        score_text = font.render(f"Score: {game.score}", True, (220, 220, 220))
+        score_text = font.render(f"Score: {env.get_score()}", True, (220, 220, 220))
         screen.blit(score_text, (width // 2 - score_text.get_width() // 2, height - 70))
 
         high_text = font.render(f"High Score: {high_score}", True, (150, 150, 150))
