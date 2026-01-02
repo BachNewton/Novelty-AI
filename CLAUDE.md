@@ -61,7 +61,8 @@ Novelty-AI/
 │   ├── evaluate.py               # Model evaluation
 │   └── watch_replays.py          # CLI replay viewer
 ├── models/{game_id}/             # Per-game trained models
-└── replays/{game_id}/            # Per-game replays
+├── replays/{game_id}/            # Per-game replays
+└── runs/{game_id}/               # TensorBoard logs
 ```
 
 ## Key Concepts
@@ -98,7 +99,33 @@ python scripts/train.py --game snake --episodes 5000 --headless
 
 # Resume from checkpoint
 python scripts/train.py --game snake --load models/snake/model_ep1000.pth
+
+# Resume from latest checkpoint (adds episodes to current progress)
+python scripts/train.py --game snake --resume --episodes 5000
 ```
+
+### TensorBoard
+
+Training automatically logs metrics to TensorBoard for visualization:
+
+```bash
+# View TensorBoard (run while training or after)
+tensorboard --logdir runs/
+
+# Then open http://localhost:6006 in your browser
+```
+
+**Logged metrics:**
+- `Score/episode` - Individual episode scores
+- `Score/avg_50` - Rolling 50-episode average
+- `Score/min_50` - Rolling 50-episode minimum
+- `Score/max_50` - Rolling 50-episode maximum
+- `Score/high` - All-time high score
+- `Training/epsilon` - Exploration rate
+- `Training/loss` - Training loss
+- `Performance/episodes_per_sec` - Training speed
+
+Logs are stored in `runs/{game_id}/{timestamp}/`.
 
 ### Evaluation
 ```bash
@@ -301,4 +328,7 @@ python scripts/evaluate.py -g snake --json          # JSON output
 # Replays
 python scripts/watch_replays.py                     # Watch all replays
 python scripts/watch_replays.py --list              # List available replays
+
+# TensorBoard
+tensorboard --logdir runs/                          # View training metrics
 ```

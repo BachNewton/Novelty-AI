@@ -66,6 +66,7 @@ class TerminalTrainingDisplay:
         self.epsilon = 1.0
         self.loss = 0.0
         self.recent_scores: deque = deque(maxlen=100)
+        self.recent_scores_50: deque = deque(maxlen=50)  # For 50-episode rolling stats
 
         # Performance tracking
         self.start_time = time.time()
@@ -141,16 +142,19 @@ class TerminalTrainingDisplay:
     def record_episode(self, score: int):
         """Record a completed episode score."""
         self.recent_scores.append(score)
+        self.recent_scores_50.append(score)
         if score > self.high_score:
             self.high_score = score
 
         # Log metrics every 5 episodes
         if self.current_episode > 0 and self.current_episode % 5 == 0:
-            avg_score = sum(self.recent_scores) / len(self.recent_scores) if self.recent_scores else 0
+            avg_50 = sum(self.recent_scores_50) / len(self.recent_scores_50) if self.recent_scores_50 else 0
+            min_50 = min(self.recent_scores_50) if self.recent_scores_50 else 0
+            max_50 = max(self.recent_scores_50) if self.recent_scores_50 else 0
             loss_str = f"{self.loss:.6f}" if self.loss > 0 else "N/A"
             self.add_message(
                 f"[dim]Ep {self.current_episode}:[/] "
-                f"Avg={avg_score:.1f} High={self.high_score} "
+                f"Avg={avg_50:.1f} Min={min_50} Max={max_50} "
                 f"Eps={self.epsilon:.4f} Loss={loss_str}"
             )
 
@@ -177,7 +181,7 @@ class TerminalTrainingDisplay:
         layout.split_column(
             Layout(name="header", size=3),
             Layout(name="progress", size=3),
-            Layout(name="main", size=8 + cpu_display_rows),
+            Layout(name="main", size=10 + cpu_display_rows),
             Layout(name="messages", size=23),
         )
 
@@ -243,12 +247,20 @@ class TerminalTrainingDisplay:
         table.add_column("Metric", style="cyan", width=12)
         table.add_column("Value", style="white")
 
-        avg_score = sum(self.recent_scores) / len(self.recent_scores) if self.recent_scores else 0
+        # Calculate 50-episode rolling stats
+        if self.recent_scores_50:
+            avg_50 = sum(self.recent_scores_50) / len(self.recent_scores_50)
+            min_50 = min(self.recent_scores_50)
+            max_50 = max(self.recent_scores_50)
+        else:
+            avg_50 = min_50 = max_50 = 0
 
         # Show last completed episode score (most recent from any env)
         last_score = max(self.last_scores) if self.last_scores else 0
         table.add_row("Last Score", f"{last_score}")
-        table.add_row("Avg Score", f"{avg_score:.1f}")
+        table.add_row("Avg (50)", f"{avg_50:.1f}")
+        table.add_row("Min (50)", f"{min_50}")
+        table.add_row("Max (50)", f"{max_50}")
         table.add_row("High Score", f"[bold yellow]{self.high_score}[/]")
         table.add_row("Epsilon", f"{self.epsilon:.4f}")
 

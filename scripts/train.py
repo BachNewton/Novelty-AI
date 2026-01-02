@@ -20,8 +20,11 @@ import ctypes
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Optional
+from datetime import datetime
+from collections import deque
 
 import numpy as np
+from torch.utils.tensorboard import SummaryWriter
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -173,6 +176,16 @@ def find_latest_checkpoint(game_id: str) -> Optional[str]:
     return str(latest_checkpoint)
 
 
+def get_checkpoint_episode(checkpoint_path: str) -> int:
+    """Get the episode number from a checkpoint file without fully loading it."""
+    import torch
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+        return checkpoint.get("episode", 0)
+    except Exception:
+        return 0
+
+
 def create_agent_and_env(config, device, num_envs: int, batch_size: int, load_path: Optional[str] = None):
     """Create vectorized environment and agent with fast buffer."""
     reward_config = config.get_reward_config()
@@ -223,12 +236,18 @@ def train_headless(config, device_manager, game_id: str, load_path: Optional[str
     # Initialize async trainer
     async_trainer = AsyncTrainer(agent, train_interval=0, trains_per_step=4)
 
+    # Initialize TensorBoard writer
+    log_dir = f"runs/{game_id}/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    writer = SummaryWriter(log_dir)
+    if not quiet:
+        print(f"[TensorBoard] Logging to {log_dir}")
+
     # Initialize state
     states = np.stack([env.reset(record=False) for env in vec_env.envs])
     episode_count = start_episode
     total_steps = 0
     high_score = 0
-    recent_scores = []
+    recent_scores_50: deque = deque(maxlen=50)
 
     start_time = time.perf_counter()
     async_trainer.start()
@@ -249,9 +268,7 @@ def train_headless(config, device_manager, game_id: str, load_path: Optional[str
                     episode_count += 1
                     score = infos[i].get("score", 0)
 
-                    recent_scores.append(score)
-                    if len(recent_scores) > 100:
-                        recent_scores.pop(0)
+                    recent_scores_50.append(score)
 
                     if score > high_score:
                         high_score = score
@@ -261,12 +278,29 @@ def train_headless(config, device_manager, game_id: str, load_path: Optional[str
                     agent.on_episode_end()
                     next_states[i] = vec_env.envs[i].reset(record=False)
 
-                    # Periodic logging
+                    # Calculate rolling stats
+                    avg_50 = sum(recent_scores_50) / len(recent_scores_50) if recent_scores_50 else 0
+                    min_50 = min(recent_scores_50) if recent_scores_50 else 0
+                    max_50 = max(recent_scores_50) if recent_scores_50 else 0
+                    elapsed = time.perf_counter() - start_time
+                    eps_per_sec = episode_count / elapsed if elapsed > 0 else 0
+                    loss = async_trainer.last_loss or 0
+
+                    # Log to TensorBoard
+                    writer.add_scalar('Score/episode', score, episode_count)
+                    writer.add_scalar('Score/avg_50', avg_50, episode_count)
+                    writer.add_scalar('Score/min_50', min_50, episode_count)
+                    writer.add_scalar('Score/max_50', max_50, episode_count)
+                    writer.add_scalar('Score/high', high_score, episode_count)
+                    writer.add_scalar('Training/epsilon', agent.epsilon, episode_count)
+                    writer.add_scalar('Training/loss', loss, episode_count)
+                    writer.add_scalar('Performance/episodes_per_sec', eps_per_sec, episode_count)
+
+                    # Periodic console logging
                     if not quiet and episode_count % 10 == 0:
-                        avg_score = sum(recent_scores) / len(recent_scores) if recent_scores else 0
                         print(
                             f"Episode {episode_count}/{config.episodes} | "
-                            f"Score: {score} | Avg: {avg_score:.1f} | "
+                            f"Score: {score} | Avg: {avg_50:.1f} | "
                             f"High: {high_score} | Epsilon: {agent.epsilon:.4f}"
                         )
 
@@ -288,6 +322,7 @@ def train_headless(config, device_manager, game_id: str, load_path: Optional[str
 
     finally:
         async_trainer.stop()
+        writer.close()
         final_path = f"{config.checkpoint_dir}/final_model.pth"
         agent.save(final_path, episode=episode_count)
         vec_env.close()
@@ -367,14 +402,19 @@ def train_with_terminal_ui(config, device_manager, game_id: str, game_name: str,
     # Initialize async trainer
     async_trainer = AsyncTrainer(agent, train_interval=0, trains_per_step=4)
 
+    # Initialize TensorBoard writer
+    log_dir = f"runs/{game_id}/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    writer = SummaryWriter(log_dir)
+
     # Initialize state
     states = np.stack([env.reset(record=False) for env in vec_env.envs])
     episode_count = start_episode
     total_steps = 0
     high_score = 0
-    recent_scores = []
+    start_time = time.perf_counter()
 
     display.start()
+    display.add_message(f"[dim]TensorBoard: {log_dir}[/]")
     async_trainer.start()
 
     try:
@@ -393,10 +433,6 @@ def train_with_terminal_ui(config, device_manager, game_id: str, game_name: str,
                     episode_count += 1
                     score = infos[i].get("score", 0)
 
-                    recent_scores.append(score)
-                    if len(recent_scores) > 100:
-                        recent_scores.pop(0)
-
                     # Update display
                     loss = async_trainer.last_loss or 0.0
                     display.update(
@@ -411,6 +447,23 @@ def train_with_terminal_ui(config, device_manager, game_id: str, game_name: str,
 
                     if score > high_score:
                         high_score = score
+
+                    # Calculate rolling stats from display's deque
+                    avg_50 = sum(display.recent_scores_50) / len(display.recent_scores_50) if display.recent_scores_50 else 0
+                    min_50 = min(display.recent_scores_50) if display.recent_scores_50 else 0
+                    max_50 = max(display.recent_scores_50) if display.recent_scores_50 else 0
+                    elapsed = time.perf_counter() - start_time
+                    eps_per_sec = episode_count / elapsed if elapsed > 0 else 0
+
+                    # Log to TensorBoard
+                    writer.add_scalar('Score/episode', score, episode_count)
+                    writer.add_scalar('Score/avg_50', avg_50, episode_count)
+                    writer.add_scalar('Score/min_50', min_50, episode_count)
+                    writer.add_scalar('Score/max_50', max_50, episode_count)
+                    writer.add_scalar('Score/high', high_score, episode_count)
+                    writer.add_scalar('Training/epsilon', agent.epsilon, episode_count)
+                    writer.add_scalar('Training/loss', loss, episode_count)
+                    writer.add_scalar('Performance/episodes_per_sec', eps_per_sec, episode_count)
 
                     agent.on_episode_end()
                     next_states[i] = vec_env.envs[i].reset(record=False)
@@ -431,6 +484,7 @@ def train_with_terminal_ui(config, device_manager, game_id: str, game_name: str,
 
     finally:
         async_trainer.stop()
+        writer.close()
         display.stop()
         final_path = f"{config.checkpoint_dir}/final_model.pth"
         agent.save(final_path, episode=episode_count)
@@ -496,8 +550,13 @@ def main():
     if args.resume:
         load_path = find_latest_checkpoint(args.game)
         if load_path:
+            # Get episode count from checkpoint and add requested episodes
+            start_episode = get_checkpoint_episode(load_path)
+            requested_episodes = config.episodes  # The episodes requested for this run
+            config.episodes = start_episode + requested_episodes  # New total
             if not args.quiet and not args.json:
                 print(f"[Resume] Found checkpoint: {load_path}")
+                print(f"[Resume] Starting from episode {start_episode}, training {requested_episodes} more (total: {config.episodes})")
         else:
             if args.json:
                 print(json.dumps({"error": "No checkpoint found to resume from"}))
